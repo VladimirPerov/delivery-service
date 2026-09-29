@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('catalog', '0001_initial'),
+        ('delivery', '0001_initial'),
     ]
 
     operations = [
@@ -41,6 +41,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='product',
             name='category',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='catalog.category'),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='delivery.category'),
         ),
     ]
