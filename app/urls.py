@@ -16,7 +16,7 @@ Including another URLconf
 """
 from rest_framework.routers import DefaultRouter
 
-from delivery.api import ProductsViewset
+from delivery.api import *
 
 from django.contrib import admin
 from django.urls import path, include
@@ -24,7 +24,13 @@ from django.urls import path, include
 from delivery import views
 
 router = DefaultRouter()
-router.register('products', ProductsViewset, basename="products")
+router.register('products', ProductViewSet, basename="products")
+router.register('categories', CategoryViewSet, basename="categories")
+router.register('profiles', ProfileViewSet, basename="profiles")
+router.register('orders', OrderViewSet, basename="orders")
+router.register('order-items', OrderItemViewSet, basename="order-items")
+router.register('deliveries', DeliveryViewSet, basename="deliveries")
+router.register('payments', PaymentViewSet, basename="payments")
 
 urlpatterns = [
     path('', views.ShowProductsView.as_view()),

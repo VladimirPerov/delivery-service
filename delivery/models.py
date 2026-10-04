@@ -39,16 +39,16 @@ class Category(models.Model):
 
 class Product(models.Model):
     class ProductType(models.TextChoices):
-        UNIT = "unit", "Штучный"
-        WEIGHT = "weight", "Весовой"
+        unit = "unit", "Штучный"
+        weight = "weight", "Весовой"
 
     name = models.TextField("Название")
     description = models.TextField("Описание")
-    price = models.DecimalField("Цена")
+    price = models.DecimalField("Цена", max_digits=10, decimal_places=2, default=0)
     category = models.ForeignKey("Category", on_delete=models.SET_NULL, null=True)
 
-    stock_quantity = models.DecimalField("Остаток на складе")
-    product_type = models.CharField("Тип товара", choices=ProductType.choices, default=ProductType.UNIT)
+    stock_quantity = models.DecimalField("Остаток на складе", max_digits=10, decimal_places=2, default=0)
+    product_type = models.CharField("Тип товара", choices=ProductType.choices, default=ProductType.unit)
 
     class Meta:
         verbose_name = "Продукт"
@@ -64,7 +64,7 @@ class Order(models.Model):
         CANCELLED = "cancelled", "Отменен"
 
     client = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True, related_name="orders") 
-    total_price = models.DecimalField("Итоговая цена")
+    total_price = models.DecimalField("Итоговая цена", max_digits=10, decimal_places=2, default=0)
     status = models.CharField("Статус заказа", choices=OrderStatus.choices, default=OrderStatus.CREATED)
     delivery_adress = models.TextField("Адрес доставки")
     comment = models.TextField("Комментарий")
@@ -76,10 +76,10 @@ class Order(models.Model):
 
 class OrderItem(models.Model):
     product = models.ForeignKey("Product", on_delete=models.CASCADE, null=True)
-    order = models.ForeignKey("Order", on_delete=models.CASCADE, null=True)
+    order = models.ForeignKey("Order", on_delete=models.CASCADE, related_name="items", null=True)
 
     quantity = models.IntegerField("Количество в заказе")
-    price_at_time = models.DecimalField("Цена в момент заказа")
+    price_at_time = models.DecimalField("Цена в момент заказа", max_digits=10, decimal_places=2, default=0)
 
     class Meta:
         verbose_name = "Позиция заказа"
