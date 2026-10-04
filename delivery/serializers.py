@@ -16,7 +16,6 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    category = CategorySerializer(read_only=True)
     class Meta:
         model = Product
         fields = "__all__"
@@ -26,7 +25,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
     items = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     delivery = serializers.PrimaryKeyRelatedField(read_only=True)
-    
+
     class Meta:
         model = Order
         fields = "__all__"
