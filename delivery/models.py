@@ -1,12 +1,16 @@
 from django.db import models
 
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth.models import User
+
 class Profile(models.Model):
     class Role(models.IntegerChoices):
         undefined = 0, "Неопределенный"
         client = 1, "Клиент"
         courier = 2, "Курьер"
     
-    user = models.OneToOneField("auth.User", on_delete=models.CASCADE,null=True, blank=True, related_name="profile")
+    user = models.OneToOneField("auth.User", on_delete=models.CASCADE,null=True, blank=True)
     role = models.IntegerField("Роль", choices=Role.choices, default=Role.undefined)
 
     name = models.CharField("Имя", max_length=150, blank=True)
@@ -23,6 +27,12 @@ class Profile(models.Model):
 
     def __str__(self):
         return self.user.username if self.user else f"Profile {self.id}"
+
+
+@receiver(post_save, sender=User)
+def on_user_create(sender, instance, created, *args, **kwargs):
+    if created:
+        Profile.objects.create(user=instance, role=Profile.Role.undefined)
 
 
 class Category(models.Model):
