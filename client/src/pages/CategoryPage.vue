@@ -17,6 +17,12 @@ const categoryAddImageUrl = ref();
 const categoryEditPictureRef = ref();
 const categoryEditImageUrl = ref();
 
+const activeImageModalUrl = ref(null);
+
+function openImageModal(url) {
+  activeImageModalUrl.value = url;
+}
+
 async function categoryEditPictureChange() {
   categoryEditImageUrl.value = URL.createObjectURL(categoryEditPictureRef.value.files[0]);
 }
@@ -130,7 +136,7 @@ onBeforeMount(async () => {
           </div>
 
           <div class="col-12" v-if="categoryAddImageUrl">
-              <img :src="categoryAddImageUrl" style="max-height: 100px;" alt="Превью" class="img-thumbnail">
+            <img :src="categoryAddImageUrl" style="max-height: 100px; cursor: pointer;" alt="Превью" class="img-thumbnail" @click="openImageModal(categoryAddImageUrl)" data-bs-toggle="modal" data-bs-target="#categoryImageModal">
           </div>
 
           <div class="col-12">
@@ -156,7 +162,7 @@ onBeforeMount(async () => {
             </p>
 
             <div v-show="item.picture" class="mt-2">
-              <img :src="item.picture" style="max-height: 100px;" alt="Фото категории" class="img-thumbnail">
+              <img :src="item.picture" style="max-height: 100px; cursor: pointer;" alt="Фото категории" class="img-thumbnail" @click="openImageModal(item.picture)" data-bs-toggle="modal" data-bs-target="#categoryImageModal">
             </div>
 
           </div>
@@ -217,7 +223,7 @@ onBeforeMount(async () => {
 
             <div class="mb-3" v-if="categoryEditImageUrl || categoryToEdit.picture">
               <label class="form-label d-block">Предпросмотр:</label>
-              <img :src="categoryEditImageUrl || categoryToEdit.picture" style="max-height: 100px;" alt="Превью" class="img-thumbnail">
+              <img :src="categoryEditImageUrl || categoryToEdit.picture" style="max-height: 100px; cursor: pointer;" alt="Превью" class="img-thumbnail" @click="openImageModal(categoryEditImageUrl || categoryToEdit.picture)" data-bs-toggle="modal" data-bs-target="#categoryImageModal">
             </div>
 
           </div>
@@ -231,6 +237,18 @@ onBeforeMount(async () => {
       </div>
     </div>
 
+    <div class="modal fade" id="categoryImageModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-transparent border-0">
+          <div class="modal-header border-0 pb-0">
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-center p-0">
+            <img :src="activeImageModalUrl" class="img-fluid rounded shadow" alt="Увеличенное изображение" style="max-height: 80vh; object-fit: contain;">
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
