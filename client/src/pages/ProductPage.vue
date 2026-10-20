@@ -14,6 +14,20 @@ const productToAdd = ref({
 
 const productToEdit = ref({});
 
+const productsPictureRef = ref();
+const productAddImageUrl = ref();
+
+const productEditPictureRef = ref();
+const productEditImageUrl = ref();
+
+async function productAddPictureChange() {
+  productAddImageUrl.value = URL.createObjectURL(productsPictureRef.value.files[0]);
+}
+
+async function productEditPictureChange() {
+  productEditImageUrl.value = URL.createObjectURL(productEditPictureRef.value.files[0]);
+}
+
 async function fetchProducts() {
   const r = await axios.get("/api/products/");
   products.value = r.data;
@@ -25,7 +39,22 @@ async function fetchCategories() {
 }
 
 async function onProductAdd() {
-    await axios.post("/api/products/", productToAdd.value);
+    const formData = new FormData();
+
+    formData.append('picture', productsPictureRef.value.files[0]);
+
+    formData.set('name', productToAdd.value.name);
+    formData.set('category', productToAdd.value.category);
+    formData.set('description', productToAdd.value.description);
+    formData.set('price', productToAdd.value.price);
+    formData.set('stock_quantity', productToAdd.value.stock_quantity);
+    formData.set('product_type', productToAdd.value.product_type);
+
+    await axios.post("/api/products/", formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data'
+        }
+    });
     
     productToAdd.value = {
       product_type: 'unit',
@@ -33,15 +62,45 @@ async function onProductAdd() {
       stock_quantity: '0.00',
       description: ''
     };
+
+    productsPictureRef.value.value = '';
+    productAddImageUrl.value = null;  
+
     await fetchProducts();
 }
 
 function onProductEditClick(product) {
   productToEdit.value = { ...product };
+
+  productEditPictureRef.value.value = '';
+  productEditImageUrl.value = null;
 }
 
 async function onUpdateProduct() {
-    await axios.put(`/api/products/${productToEdit.value.id}/`, productToEdit.value);
+    const formData = new FormData();
+
+    if (productEditPictureRef.value?.files[0]) {
+        formData.append('picture', productEditPictureRef.value.files[0]);
+    }
+
+    formData.set('name', productToEdit.value.name);
+    if (productToEdit.value.category) {
+        formData.set('category', productToEdit.value.category);
+    }
+    formData.set('description', productToEdit.value.description || '');
+    formData.set('price', productToEdit.value.price);
+    formData.set('stock_quantity', productToEdit.value.stock_quantity);
+    formData.set('product_type', productToEdit.value.product_type);
+
+    await axios.put(`/api/products/${productToEdit.value.id}/`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data'
+        }
+    });
+
+    if (productEditPictureRef.value) productEditPictureRef.value.value = '';
+    productEditImageUrl.value = null;
+
     await fetchProducts();
 }
 
@@ -112,6 +171,15 @@ onBeforeMount(async () => {
         </div>
 
         <div class="col-12">
+          <label for="newPicture" class="form-label">Картинка продукта</label>
+          <input class="form-control" type="file" ref="productsPictureRef" @change="productAddPictureChange" id="newPicture" accept="image/*">
+        </div>
+
+        <div class="col-12" v-if="productAddImageUrl">
+            <img :src="productAddImageUrl" style="max-height: 100px;" alt="Превью" class="img-thumbnail">
+        </div>
+
+        <div class="col-12">
           <button class="btn btn-primary w-100">Добавить продукт</button>
         </div>
       </div>
@@ -120,22 +188,28 @@ onBeforeMount(async () => {
     <div class="card shadow-sm">
       <div class="card-body">
         <div v-for="item in products" :key="item.id" class="d-flex justify-content-between align-items-center border-bottom py-2">
-          <div>
-            <strong>{{ item.name }}</strong> — {{ item.price }} руб. 
-            <small class="text-muted">(Остаток: {{ item.stock_quantity }})</small>
-          </div>
-          <div class="btn-group">
-            <button
-              class="btn btn-outline-success btn-sm"
-              @click="onProductEditClick(item)"
-              data-bs-toggle="modal"
-              data-bs-target="#editProductModal">
-              Изменить
-            </button>
-            <button class="btn btn-outline-danger btn-sm" @click="onRemoveClick(item)">
-              Удалить
-            </button>
-          </div>
+            
+            <div class="d-flex align-items-center"> 
+                
+                <div v-show="item.picture" class="me-3">
+                <img :src="item.picture" style="max-height: 60px;" alt="Фото продукта">
+                </div>
+
+                <div>
+                <strong>{{ item.name }}</strong> — {{ item.price }} руб. 
+                <small class="text-muted">(Остаток: {{ item.stock_quantity }})</small>
+                </div>
+                
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-outline-success btn-sm" @click="onProductEditClick(item)" data-bs-toggle="modal" data-bs-target="#editProductModal">
+                Изменить
+                </button>
+                <button class="btn btn-outline-danger btn-sm" @click="onRemoveClick(item)">
+                Удалить
+                </button>
+            </div>
         </div>
       </div>
     </div>
@@ -195,6 +269,17 @@ onBeforeMount(async () => {
                 <label for="editType">Тип товара</label>
               </div>
             </div>
+
+            <div class="mb-3">
+              <label for="editPicture" class="form-label">Изменить картинку продукта</label>
+              <input class="form-control" type="file" ref="productEditPictureRef" @change="productEditPictureChange" id="editPicture" accept="image/*">
+            </div>
+
+            <div class="mb-3" v-if="productEditImageUrl || productToEdit.picture">
+              <label class="form-label d-block">Предпросмотр:</label>
+              <img :src="productEditImageUrl || productToEdit.picture" style="max-height: 100px;" alt="Превью" class="img-thumbnail">
+            </div>
+
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>

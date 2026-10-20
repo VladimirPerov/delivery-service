@@ -2,3 +2,5 @@ __pycache__
 local.py
 *.sqlite3
 .vscode
+static/
+media/

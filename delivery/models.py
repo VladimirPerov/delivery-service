@@ -38,6 +38,8 @@ class Category(models.Model):
     name = models.TextField("Название")
     description = models.TextField("Описание")
 
+    picture = models.ImageField("Изображение", null=True, upload_to="categories")
+
     class Meta:
         verbose_name = "Категория"
         verbose_name_plural = "Категории"
@@ -58,6 +60,8 @@ class Product(models.Model):
 
     stock_quantity = models.DecimalField("Остаток на складе", max_digits=10, decimal_places=2, default=0)
     product_type = models.CharField("Тип товара", choices=ProductType.choices, default=ProductType.unit)
+
+    picture = models.ImageField("Изображение", null=True, upload_to="products")
 
     class Meta:
         verbose_name = "Продукт"

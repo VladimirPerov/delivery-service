@@ -11,13 +11,39 @@ const categoryToAdd = ref({
 
 const categoryToEdit = ref({});
 
+const categoriesPictureRef = ref();
+const categoryAddImageUrl = ref();
+
+const categoryEditPictureRef = ref();
+const categoryEditImageUrl = ref();
+
+async function categoryEditPictureChange() {
+  categoryEditImageUrl.value = URL.createObjectURL(categoryEditPictureRef.value.files[0]);
+}
+
+async function categoryAddPictureChange() {
+  categoryAddImageUrl.value = URL.createObjectURL(categoriesPictureRef.value.files[0]);
+}
+
 async function fetchCategories() {
   const r = await axios.get("/api/categories/");
   categories.value = r.data;
 }
 
 async function onCategoryAdd() {
-  await axios.post("/api/categories/", categoryToAdd.value);
+  const formData = new FormData();
+
+  formData.append('picture', categoriesPictureRef.value.files[0]);
+
+  formData.set('name', categoryToAdd.value.name);
+  formData.set('description', categoryToAdd.value.description);
+
+  await axios.post("/api/categories/", formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  });
+  
   categoryToAdd.value = {
     name: '',
     description: ''
@@ -27,10 +53,30 @@ async function onCategoryAdd() {
 
 function onCategoryEditClick(category) {
   categoryToEdit.value = { ...category };
+
+  categoryEditPictureRef.value.value = '';
+  categoryEditImageUrl.value = null;
 }
 
 async function onUpdateCategory() {
-  await axios.put(`/api/categories/${categoryToEdit.value.id}/`, categoryToEdit.value);
+  const formData = new FormData();
+
+  if (categoryEditPictureRef.value?.files[0]) {
+    formData.append('picture', categoryEditPictureRef.value.files[0]);
+  }
+
+  formData.set('name', categoryToEdit.value.name);
+  formData.set('description', categoryToEdit.value.description || '');
+
+  await axios.put(`/api/categories/${categoryToEdit.value.id}/`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  });
+
+  if (categoryEditPictureRef.value) categoryEditPictureRef.value.value = '';
+  categoryEditImageUrl.value = null;
+
   await fetchCategories();
 }
 
@@ -78,11 +124,20 @@ onBeforeMount(async () => {
           </div>
         </div>
 
-        <div class="col-12">
-          <button class="btn btn-primary w-100">Добавить категорию</button>
+          <div class="col-12">
+            <label for="newCatPicture" class="form-label">Изображение категории</label>
+            <input class="form-control" type="file" id="newCatPicture"ref="categoriesPictureRef" @change="categoryAddPictureChange"accept="image/*">
+          </div>
+
+          <div class="col-12" v-if="categoryAddImageUrl">
+              <img :src="categoryAddImageUrl" style="max-height: 100px;" alt="Превью" class="img-thumbnail">
+          </div>
+
+          <div class="col-12">
+            <button class="btn btn-primary w-100">Добавить категорию</button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
 
     <div class="card shadow-sm">
       <div class="card-body">
@@ -99,6 +154,11 @@ onBeforeMount(async () => {
             <p class="text-muted mb-0 small" v-if="item.description">
               {{ item.description }}
             </p>
+
+            <div v-show="item.picture" class="mt-2">
+              <img :src="item.picture" style="max-height: 100px;" alt="Фото категории" class="img-thumbnail">
+            </div>
+
           </div>
           <div class="btn-group">
             <button
@@ -144,11 +204,22 @@ onBeforeMount(async () => {
                   v-model="categoryToEdit.description" 
                   id="editCatDesc" 
                   style="height: 100px" 
-                  placeholder="Описание"
-                ></textarea>
+                  placeholder="Описание">
+                </textarea>
                 <label for="editCatDesc">Описание</label>
               </div>
             </div>
+
+            <div class="mb-3">
+              <label for="editCatPicture" class="form-label">Изменить изображение категории</label>
+              <input class="form-control" type="file" ref="categoryEditPictureRef" @change="categoryEditPictureChange" id="editCatPicture" accept="image/*">
+            </div>
+
+            <div class="mb-3" v-if="categoryEditImageUrl || categoryToEdit.picture">
+              <label class="form-label d-block">Предпросмотр:</label>
+              <img :src="categoryEditImageUrl || categoryToEdit.picture" style="max-height: 100px;" alt="Превью" class="img-thumbnail">
+            </div>
+
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
