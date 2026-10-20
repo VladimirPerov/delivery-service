@@ -14,7 +14,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "role", "name", "phone", "email", "bonus_points", "is_available"]
+    list_display = ["id", "user", "role", "name", "phone", "bonus_points", "is_available"]
 
 
 @admin.register(Order)

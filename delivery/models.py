@@ -15,8 +15,7 @@ class Profile(models.Model):
 
     name = models.CharField("Имя", max_length=150, blank=True)
     phone = models.CharField("Номер телефона", max_length=20, blank=True)
-    email = models.EmailField("Email", blank=True)
-
+    
     bonus_points = models.PositiveIntegerField("Бонусные баллы", default=0)
 
     is_available = models.BooleanField("Доступен для заказов", default=False)
