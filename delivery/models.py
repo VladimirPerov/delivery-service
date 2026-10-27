@@ -61,11 +61,18 @@ class Product(models.Model):
     stock_quantity = models.DecimalField("Остаток на складе", max_digits=10, decimal_places=2, default=0)
     product_type = models.CharField("Тип товара", choices=ProductType.choices, default=ProductType.unit)
 
-    picture = models.ImageField("Изображение", null=True, upload_to="products")
-
     class Meta:
         verbose_name = "Продукт"
         verbose_name_plural = "Продукты"
+
+
+class ProductPicture(models.Model):
+    product = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="pictures")
+    picture = models.ImageField("Изображение", upload_to="products")
+
+    class Meta:
+        verbose_name = "Фотография продукта"
+        verbose_name_plural = "Фотографии продукта"
 
 
 class Order(models.Model):

@@ -28,6 +28,7 @@ from delivery import views
 
 router = DefaultRouter()
 router.register('products', ProductViewSet, basename="products")
+router.register('product-pictures', ProductPictureViewSet, basename="product-pictures")
 router.register('categories', CategoryViewSet, basename="categories")
 router.register('profiles', ProfileViewSet, basename="profiles")
 router.register('orders', OrderViewSet, basename="orders")

@@ -2,9 +2,15 @@ from django.contrib import admin
 
 from delivery.models import *
 
+class ProductPictureInline(admin.TabularInline):
+    model = ProductPicture
+    extra = 1
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ["id", "name", "description", "price", "category__name", "stock_quantity","product_type",]
+    inlines = [ProductPictureInline]
 
 
 @admin.register(Category)

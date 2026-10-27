@@ -14,24 +14,28 @@ const productToAdd = ref({
 
 const productToEdit = ref({});
 
-const productsPictureRef = ref();
-const productAddImageUrl = ref();
+const productAddPicturesRef = ref();
+const productEditPicturesRef = ref();
 
-const productEditPictureRef = ref();
-const productEditImageUrl = ref();
+const activeImageModalUrls = ref([]);
+const activeImageModalIndex = ref(0);
 
-const activeImageModalUrl = ref(null);
-
-function openImageModal(url) {
-  activeImageModalUrl.value = url;
+function getProductPictures(product) {
+  return (product.pictures || []).map(picture => picture.picture);
 }
 
-async function productAddPictureChange() {
-  productAddImageUrl.value = URL.createObjectURL(productsPictureRef.value.files[0]);
+function openImageModal(urls) {
+  activeImageModalUrls.value = urls;
+  activeImageModalIndex.value = 0;
 }
 
-async function productEditPictureChange() {
-  productEditImageUrl.value = URL.createObjectURL(productEditPictureRef.value.files[0]);
+async function uploadProductPictures(productId, files) {
+  for (const file of files) {
+    const formData = new FormData();
+    formData.append('product', productId);
+    formData.append('picture', file);
+    await axios.post("/api/product-pictures/", formData);
+  }
 }
 
 async function fetchProducts() {
@@ -47,8 +51,6 @@ async function fetchCategories() {
 async function onProductAdd() {
     const formData = new FormData();
 
-    formData.append('picture', productsPictureRef.value.files[0]);
-
     formData.set('name', productToAdd.value.name);
     formData.set('category', productToAdd.value.category);
     formData.set('description', productToAdd.value.description);
@@ -56,11 +58,13 @@ async function onProductAdd() {
     formData.set('stock_quantity', productToAdd.value.stock_quantity);
     formData.set('product_type', productToAdd.value.product_type);
 
-    await axios.post("/api/products/", formData, {
+    const r = await axios.post("/api/products/", formData, {
         headers: {
             'Content-Type': 'multipart/form-data'
         }
     });
+
+    await uploadProductPictures(r.data.id, productAddPicturesRef.value.files);
     
     productToAdd.value = {
       product_type: 'unit',
@@ -69,8 +73,7 @@ async function onProductAdd() {
       description: ''
     };
 
-    productsPictureRef.value.value = '';
-    productAddImageUrl.value = null;  
+    productAddPicturesRef.value.value = '';
 
     await fetchProducts();
 }
@@ -78,16 +81,11 @@ async function onProductAdd() {
 function onProductEditClick(product) {
   productToEdit.value = { ...product };
 
-  productEditPictureRef.value.value = '';
-  productEditImageUrl.value = null;
+  productEditPicturesRef.value.value = '';
 }
 
 async function onUpdateProduct() {
     const formData = new FormData();
-
-    if (productEditPictureRef.value?.files[0]) {
-        formData.append('picture', productEditPictureRef.value.files[0]);
-    }
 
     formData.set('name', productToEdit.value.name);
     if (productToEdit.value.category) {
@@ -104,8 +102,9 @@ async function onUpdateProduct() {
         }
     });
 
-    if (productEditPictureRef.value) productEditPictureRef.value.value = '';
-    productEditImageUrl.value = null;
+    await uploadProductPictures(productToEdit.value.id, productEditPicturesRef.value.files);
+
+    productEditPicturesRef.value.value = '';
 
     await fetchProducts();
 }
@@ -177,12 +176,8 @@ onBeforeMount(async () => {
         </div>
 
         <div class="col-12">
-          <label for="newPicture" class="form-label">Картинка продукта</label>
-          <input class="form-control" type="file" ref="productsPictureRef" @change="productAddPictureChange" id="newPicture" accept="image/*">
-        </div>
-
-        <div class="col-12" v-if="productAddImageUrl">
-            <img :src="productAddImageUrl" style="max-height: 100px; cursor: pointer;" alt="Превью" class="img-thumbnail" @click="openImageModal(productAddImageUrl)" data-bs-toggle="modal" data-bs-target="#imagePreviewModal">
+          <label for="newPictures" class="form-label">Фотографии альбома</label>
+          <input class="form-control" type="file" ref="productAddPicturesRef" id="newPictures" accept="image/*" multiple>
         </div>
 
         <div class="col-12">
@@ -197,8 +192,8 @@ onBeforeMount(async () => {
             
             <div class="d-flex align-items-center"> 
                 
-                <div v-show="item.picture" class="me-3">
-                <img :src="item.picture" style="max-height: 60px; cursor: pointer;" alt="Фото продукта" @click="openImageModal(item.picture)" data-bs-toggle="modal" data-bs-target="#imagePreviewModal">
+                <div v-if="getProductPictures(item).length" class="me-3">
+                <img :src="getProductPictures(item)[0]" style="max-height: 60px; cursor: pointer;" alt="Фото продукта" @click="openImageModal(getProductPictures(item))" data-bs-toggle="modal" data-bs-target="#imagePreviewModal">
                 </div>
 
                 <div>
@@ -277,13 +272,8 @@ onBeforeMount(async () => {
             </div>
 
             <div class="mb-3">
-              <label for="editPicture" class="form-label">Изменить картинку продукта</label>
-              <input class="form-control" type="file" ref="productEditPictureRef" @change="productEditPictureChange" id="editPicture" accept="image/*">
-            </div>
-
-            <div class="mb-3" v-if="productEditImageUrl || productToEdit.picture">
-              <label class="form-label d-block">Предпросмотр:</label>
-              <img :src="productEditImageUrl || productToEdit.picture" style="max-height: 100px; cursor: pointer;" alt="Превью" class="img-thumbnail" @click="openImageModal(productEditImageUrl || productToEdit.picture)" data-bs-toggle="modal" data-bs-target="#imagePreviewModal">
+              <label for="editPictures" class="form-label">Добавить фотографии в альбом</label>
+              <input class="form-control" type="file" ref="productEditPicturesRef" id="editPictures" accept="image/*" multiple>
             </div>
 
           </div>
@@ -303,7 +293,12 @@ onBeforeMount(async () => {
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-center p-0">
-            <img :src="activeImageModalUrl" class="img-fluid rounded shadow" alt="Увеличенное изображение" style="max-height: 80vh; object-fit: contain;">
+            <img :src="activeImageModalUrls[activeImageModalIndex]" class="img-fluid rounded shadow" alt="Увеличенное изображение" style="max-height: 80vh; object-fit: contain;">
+            <div v-if="activeImageModalUrls.length > 1" class="d-flex justify-content-center align-items-center gap-3 mt-3">
+              <button type="button" class="btn btn-light" @click="activeImageModalIndex = (activeImageModalIndex + activeImageModalUrls.length - 1) % activeImageModalUrls.length">Назад</button>
+              <span class="text-white">{{ activeImageModalIndex + 1 }} / {{ activeImageModalUrls.length }}</span>
+              <button type="button" class="btn btn-light" @click="activeImageModalIndex = (activeImageModalIndex + 1) % activeImageModalUrls.length">Вперёд</button>
+            </div>
           </div>
         </div>
       </div>

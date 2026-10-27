@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from delivery.models import Category, Delivery, Order, OrderItem, Payment, Product, Profile
+from delivery.models import Category, Delivery, Order, OrderItem, Payment, Product, ProductPicture, Profile
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -15,7 +15,15 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class ProductPictureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductPicture
+        fields = "__all__"
+
+
 class ProductSerializer(serializers.ModelSerializer):
+    pictures = ProductPictureSerializer(many=True, read_only=True)
+
     class Meta:
         model = Product
         fields = "__all__"
