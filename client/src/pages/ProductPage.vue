@@ -1,6 +1,6 @@
 <script setup>
 import axios from 'axios';
-import { onBeforeMount, ref } from 'vue';
+import { nextTick, onBeforeMount, onBeforeUnmount, ref } from 'vue';
 
 const products = ref([]);
 const categories = ref([]);
@@ -16,17 +16,56 @@ const productToEdit = ref({});
 
 const productAddPicturesRef = ref();
 const productEditPicturesRef = ref();
+const productAddPreviewUrls = ref([]);
+const productEditPreviewUrls = ref([]);
 
 const activeImageModalUrls = ref([]);
 const activeImageModalIndex = ref(0);
+const isImageModalOpen = ref(false);
+const imageModalRef = ref(null);
 
 function getProductPictures(product) {
-  return (product.pictures || []).map(picture => picture.picture);
+  return (product.pictures || []).map(picture => picture.picture).filter(Boolean);
 }
 
-function openImageModal(urls) {
-  activeImageModalUrls.value = urls;
-  activeImageModalIndex.value = 0;
+function clearPreviews(previewUrls) {
+  previewUrls.value.forEach(url => URL.revokeObjectURL(url));
+  previewUrls.value = [];
+}
+
+function updatePreviews(event, previewUrls) {
+  clearPreviews(previewUrls);
+  previewUrls.value = Array.from(event.target.files || [])
+    .filter(file => file.type.startsWith('image/'))
+    .map(file => URL.createObjectURL(file));
+}
+
+function onAddPicturesChange(event) {
+  updatePreviews(event, productAddPreviewUrls);
+}
+
+function onEditPicturesChange(event) {
+  updatePreviews(event, productEditPreviewUrls);
+}
+
+async function openImageModal(urls, index = 0) {
+  if (!urls.length) return;
+  activeImageModalUrls.value = [...urls];
+  activeImageModalIndex.value = index;
+  isImageModalOpen.value = true;
+  await nextTick();
+  imageModalRef.value?.focus();
+}
+
+function closeImageModal() {
+  isImageModalOpen.value = false;
+}
+
+function showAdjacentImage(step) {
+  const length = activeImageModalUrls.value.length;
+  if (length > 1) {
+    activeImageModalIndex.value = (activeImageModalIndex.value + step + length) % length;
+  }
 }
 
 async function uploadProductPictures(productId, files) {
@@ -74,6 +113,7 @@ async function onProductAdd() {
     };
 
     productAddPicturesRef.value.value = '';
+    clearPreviews(productAddPreviewUrls);
 
     await fetchProducts();
 }
@@ -82,6 +122,7 @@ function onProductEditClick(product) {
   productToEdit.value = { ...product };
 
   productEditPicturesRef.value.value = '';
+  clearPreviews(productEditPreviewUrls);
 }
 
 async function onUpdateProduct() {
@@ -105,6 +146,7 @@ async function onUpdateProduct() {
     await uploadProductPictures(productToEdit.value.id, productEditPicturesRef.value.files);
 
     productEditPicturesRef.value.value = '';
+    clearPreviews(productEditPreviewUrls);
 
     await fetchProducts();
 }
@@ -117,6 +159,11 @@ async function onRemoveClick(product) {
 onBeforeMount(async () => {
   await fetchCategories();
   await fetchProducts();
+});
+
+onBeforeUnmount(() => {
+  clearPreviews(productAddPreviewUrls);
+  clearPreviews(productEditPreviewUrls);
 });
 </script>
 
@@ -176,8 +223,20 @@ onBeforeMount(async () => {
         </div>
 
         <div class="col-12">
-          <label for="newPictures" class="form-label">Фотографии альбома</label>
-          <input class="form-control" type="file" ref="productAddPicturesRef" id="newPictures" accept="image/*" multiple>
+          <label for="newPictures" class="form-label">Фотографии продукта</label>
+          <input class="form-control" type="file" ref="productAddPicturesRef" id="newPictures" accept="image/*" multiple @change="onAddPicturesChange">
+        </div>
+
+        <div v-if="productAddPreviewUrls.length" class="col-12">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-semibold">Предпросмотр фотографий</span>
+            <span class="badge text-bg-light">{{ productAddPreviewUrls.length }} фото</span>
+          </div>
+          <div class="product-gallery">
+            <button v-for="(url, index) in productAddPreviewUrls" :key="url" type="button" class="product-gallery-item" :aria-label="`Увеличить фото ${index + 1}`" @click="openImageModal(productAddPreviewUrls, index)">
+              <img :src="url" :alt="`Новое фото ${index + 1}`">
+            </button>
+          </div>
         </div>
 
         <div class="col-12">
@@ -188,17 +247,20 @@ onBeforeMount(async () => {
 
     <div class="card shadow-sm">
       <div class="card-body">
-        <div v-for="item in products" :key="item.id" class="d-flex justify-content-between align-items-center border-bottom py-2">
+        <div v-for="item in products" :key="item.id" class="d-flex justify-content-between align-items-center gap-3 border-bottom py-3">
             
-            <div class="d-flex align-items-center"> 
+            <div class="d-flex align-items-center gap-3 product-list-main"> 
                 
-                <div v-if="getProductPictures(item).length" class="me-3">
-                <img :src="getProductPictures(item)[0]" style="max-height: 60px; cursor: pointer;" alt="Фото продукта" @click="openImageModal(getProductPictures(item))" data-bs-toggle="modal" data-bs-target="#imagePreviewModal">
-                </div>
+                <button v-if="getProductPictures(item).length" type="button" class="product-list-image" :aria-label="`Просмотреть фотографии: ${item.name}`" @click="openImageModal(getProductPictures(item))">
+                  <img :src="getProductPictures(item)[0]" :alt="`Фото продукта ${item.name}`">
+                  <span v-if="getProductPictures(item).length > 1" class="photo-count">+{{ getProductPictures(item).length - 1 }}</span>
+                </button>
+                <div v-else class="product-list-placeholder">Нет фото</div>
 
                 <div>
-                <strong>{{ item.name }}</strong> — {{ item.price }} руб. 
-                <small class="text-muted">(Остаток: {{ item.stock_quantity }})</small>
+                  <strong>{{ item.name }}</strong>
+                  <div>{{ item.price }} руб.</div>
+                  <small class="text-muted">Остаток: {{ item.stock_quantity }}</small>
                 </div>
                 
             </div>
@@ -273,7 +335,28 @@ onBeforeMount(async () => {
 
             <div class="mb-3">
               <label for="editPictures" class="form-label">Добавить фотографии в альбом</label>
-              <input class="form-control" type="file" ref="productEditPicturesRef" id="editPictures" accept="image/*" multiple>
+              <input class="form-control" type="file" ref="productEditPicturesRef" id="editPictures" accept="image/*" multiple @change="onEditPicturesChange">
+            </div>
+
+            <div v-if="getProductPictures(productToEdit).length" class="mb-3">
+              <div class="fw-semibold mb-2">Сохранённые фотографии</div>
+              <div class="product-gallery">
+                <button v-for="(url, index) in getProductPictures(productToEdit)" :key="url" type="button" class="product-gallery-item" :aria-label="`Увеличить сохранённое фото ${index + 1}`" @click="openImageModal(getProductPictures(productToEdit), index)">
+                  <img :src="url" :alt="`Сохранённое фото ${index + 1}`">
+                </button>
+              </div>
+            </div>
+
+            <div v-if="productEditPreviewUrls.length" class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-semibold">Новые фотографии</span>
+                <span class="badge text-bg-light">{{ productEditPreviewUrls.length }} фото</span>
+              </div>
+              <div class="product-gallery">
+                <button v-for="(url, index) in productEditPreviewUrls" :key="url" type="button" class="product-gallery-item" :aria-label="`Увеличить новое фото ${index + 1}`" @click="openImageModal(productEditPreviewUrls, index)">
+                  <img :src="url" :alt="`Новое фото ${index + 1}`">
+                </button>
+              </div>
             </div>
 
           </div>
@@ -286,25 +369,195 @@ onBeforeMount(async () => {
         </div>
       </div>
     </div>
-    <div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content bg-transparent border-0">
-          <div class="modal-header border-0 pb-0">
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-center p-0">
-            <img :src="activeImageModalUrls[activeImageModalIndex]" class="img-fluid rounded shadow" alt="Увеличенное изображение" style="max-height: 80vh; object-fit: contain;">
-            <div v-if="activeImageModalUrls.length > 1" class="d-flex justify-content-center align-items-center gap-3 mt-3">
-              <button type="button" class="btn btn-light" @click="activeImageModalIndex = (activeImageModalIndex + activeImageModalUrls.length - 1) % activeImageModalUrls.length">Назад</button>
-              <span class="text-white">{{ activeImageModalIndex + 1 }} / {{ activeImageModalUrls.length }}</span>
-              <button type="button" class="btn btn-light" @click="activeImageModalIndex = (activeImageModalIndex + 1) % activeImageModalUrls.length">Вперёд</button>
-            </div>
-          </div>
+    <Teleport to="body">
+      <div v-if="isImageModalOpen" ref="imageModalRef" class="product-lightbox" role="dialog" aria-modal="true" aria-label="Просмотр фотографий продукта" tabindex="-1" @click.self="closeImageModal" @keydown.esc.prevent.stop="closeImageModal" @keydown.left.prevent.stop="showAdjacentImage(-1)" @keydown.right.prevent.stop="showAdjacentImage(1)">
+        <button type="button" class="product-lightbox-close" aria-label="Закрыть предпросмотр" @click="closeImageModal">&times;</button>
+        <div class="product-lightbox-content">
+          <button v-if="activeImageModalUrls.length > 1" type="button" class="product-lightbox-arrow" aria-label="Предыдущее фото" @click="showAdjacentImage(-1)">‹</button>
+          <img :src="activeImageModalUrls[activeImageModalIndex]" :alt="`Фото ${activeImageModalIndex + 1}`" class="product-lightbox-image">
+          <button v-if="activeImageModalUrls.length > 1" type="button" class="product-lightbox-arrow" aria-label="Следующее фото" @click="showAdjacentImage(1)">›</button>
         </div>
+        <div v-if="activeImageModalUrls.length > 1" class="product-lightbox-count">{{ activeImageModalIndex + 1 }} / {{ activeImageModalUrls.length }}</div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
-<style>
+<style scoped>
+.product-list-main {
+  min-width: 0;
+}
+
+.product-list-image,
+.product-list-placeholder {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 96px;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  background: #f8f9fa;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+}
+
+.product-list-image,
+.product-gallery-item {
+  cursor: zoom-in;
+}
+
+.product-list-image img,
+.product-gallery-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-list-placeholder {
+  color: #6c757d;
+  font-size: .75rem;
+}
+
+.photo-count {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, .75);
+  color: white;
+  font-size: .75rem;
+}
+
+.product-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+.product-gallery-item {
+  aspect-ratio: 1;
+  padding: 4px;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  background: white;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.product-gallery-item img {
+  border-radius: 8px;
+}
+
+.product-list-image:hover,
+.product-gallery-item:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .17);
+}
+
+.product-gallery-item:hover {
+  transform: translateY(-2px);
+}
+
+.product-list-image:focus-visible,
+.product-gallery-item:focus-visible {
+  outline: 3px solid #0d6efd;
+  outline-offset: 2px;
+}
+
+.product-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 50px 20px 20px;
+  background: rgba(10, 15, 25, .94);
+}
+
+.product-lightbox-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 0;
+}
+
+.product-lightbox-image {
+  display: block;
+  max-width: min(100%, 1100px);
+  max-height: 78vh;
+  min-width: 0;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .35);
+}
+
+.product-lightbox-close,
+.product-lightbox-arrow {
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 50%;
+  color: white;
+  background: rgba(255, 255, 255, .14);
+  cursor: pointer;
+}
+
+.product-lightbox-close {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  width: 42px;
+  height: 42px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.product-lightbox-arrow {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.product-lightbox-close:hover,
+.product-lightbox-arrow:hover {
+  background: rgba(255, 255, 255, .3);
+}
+
+.product-lightbox-count {
+  color: white;
+  font-size: .9rem;
+}
+
+@media (max-width: 575px) {
+  .product-list-image,
+  .product-list-placeholder {
+    flex-basis: 76px;
+    width: 76px;
+    height: 76px;
+  }
+
+  .product-lightbox {
+    padding-inline: 8px;
+  }
+
+  .product-lightbox-content {
+    gap: 5px;
+  }
+
+  .product-lightbox-arrow {
+    flex-basis: 32px;
+    width: 32px;
+    height: 36px;
+  }
+}
 </style>
