@@ -1,4 +1,18 @@
 <script setup>
+import useProfileStore from '@/stores/profileStore';
+import { storeToRefs } from 'pinia';
+
+
+const profileStore = useProfileStore();
+const {
+    isAuthenticated,
+    userName
+} = storeToRefs(profileStore)
+
+
+async function onLogoutButtonClick() {
+    profileStore.logout();
+}
 </script>
 
 <template>

@@ -27,6 +27,7 @@ from django.conf.urls.static import static
 from delivery import views
 
 router = DefaultRouter()
+router.register('profile', AuthProfileViewSet, basename="profile")
 router.register('products', ProductViewSet, basename="products")
 router.register('product-pictures', ProductPictureViewSet, basename="product-pictures")
 router.register('categories', CategoryViewSet, basename="categories")
@@ -40,4 +41,5 @@ urlpatterns = [
     path('', views.ShowProductsView.as_view()),
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) \
+  + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

@@ -13,6 +13,8 @@ import PaymentPage from '@/pages/PaymentPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  linkActiveClass: 'active',
+  linkExactActiveClass: 'active-exact',
   routes: [
     {
       path: "/",
