@@ -35,6 +35,7 @@ def on_user_create(sender, instance, created, *args, **kwargs):
 
 
 class Category(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
     name = models.TextField("Название")
     description = models.TextField("Описание")
 
@@ -49,6 +50,8 @@ class Category(models.Model):
 
 
 class Product(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
+
     class ProductType(models.TextChoices):
         unit = "unit", "Штучный"
         weight = "weight", "Весовой"
@@ -67,6 +70,7 @@ class Product(models.Model):
 
 
 class ProductPicture(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
     product = models.ForeignKey("Product", on_delete=models.CASCADE, related_name="pictures")
     picture = models.ImageField("Изображение", upload_to="products")
 
@@ -76,6 +80,8 @@ class ProductPicture(models.Model):
 
 
 class Order(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
+
     class OrderStatus(models.TextChoices):
         CREATED = "created", "Создан"
         IN_PROGRESS = "in_progress", "В обработке"
@@ -95,6 +101,7 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
     product = models.ForeignKey("Product", on_delete=models.CASCADE, null=True)
     order = models.ForeignKey("Order", on_delete=models.CASCADE, related_name="items", null=True)
 
@@ -107,6 +114,8 @@ class OrderItem(models.Model):
 
 
 class Delivery(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
+
     class DeliveryStatus(models.TextChoices):
         assigned = "assigned", "Назначена"
         in_transit = "in_transit", "В пути"
@@ -126,6 +135,8 @@ class Delivery(models.Model):
 
 
 class Payment(models.Model):
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, null=True)
+
     class PaymentMethod(models.TextChoices):
         cash = "cash", "Наличные"
         card = "card", "Банковская карта"

@@ -1,6 +1,9 @@
 <script setup>
 import axios from 'axios';
-import { onBeforeMount, ref } from 'vue';
+import UserFilter from '@/components/UserFilter.vue';
+import { onBeforeMount, ref, watch } from 'vue';
+
+const selectedUser = ref("");
 
 const deliveries = ref([]);
 const orders = ref([]);
@@ -25,7 +28,7 @@ function formatDateForInput(datetimeStr) {
 }
 
 async function fetchDeliveries() {
-  const r = await axios.get("/api/deliveries/");
+  const r = await axios.get("/api/deliveries/", { params: { user: selectedUser.value } });
   deliveries.value = r.data;
 }
 
@@ -102,11 +105,13 @@ onBeforeMount(async () => {
     fetchCouriers()
   ]);
 });
+watch(selectedUser, fetchDeliveries);
 </script>
 
 <template>
   <div class="container my-4">
     <h2>Управление доставками</h2>
+    <UserFilter v-model="selectedUser" />
 
     <form @submit.prevent.stop="onDeliveryAdd" class="card p-3 mb-4 shadow-sm">
       <h5 class="mb-3">Добавить новую доставку</h5>

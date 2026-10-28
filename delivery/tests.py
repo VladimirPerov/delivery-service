@@ -9,9 +9,144 @@ from delivery.models import *
 
 User = get_user_model()
 
+
+class UserDataAccessTestCase(TestCase):
+    def setUp(self):
+        self.user = baker.make(User)
+        self.other = baker.make(User)
+        self.admin = baker.make(User, is_superuser=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.records = [('profiles', Profile, self.user.profile, self.other.profile)]
+        for endpoint, model in [
+            ('categories', Category), ('products', Product),
+            ('product-pictures', ProductPicture), ('orders', Order),
+            ('order-items', OrderItem), ('deliveries', Delivery), ('payments', Payment),
+        ]:
+            own = baker.make(model, user=self.user)
+            other = baker.make(model, user=self.other)
+            baker.make(model, user=None)
+            self.records.append((endpoint, model, own, other))
+
+    def test_anonymous_cannot_read_data(self):
+        self.client.force_authenticate(None)
+        for endpoint, model, own, other in self.records:
+            with self.subTest(endpoint=endpoint):
+                assert self.client.get(f'/api/{endpoint}/').status_code == 403
+        assert self.client.get('/api/users/').status_code == 403
+
+    def test_user_only_sees_own_records_and_cannot_override_filter(self):
+        for endpoint, model, own, other in self.records:
+            with self.subTest(endpoint=endpoint):
+                for params in ({}, {'user': self.other.id}):
+                    response = self.client.get(f'/api/{endpoint}/', params)
+                    assert response.status_code == 200
+                    assert [item['id'] for item in response.json()] == [own.id]
+
+    def test_foreign_detail_update_and_delete_are_denied(self):
+        for endpoint, model, own, other in self.records:
+            with self.subTest(endpoint=endpoint):
+                url = f'/api/{endpoint}/{other.id}/'
+                assert self.client.get(url).status_code == 404
+                assert self.client.patch(url, {}, format='json').status_code == 404
+                assert self.client.delete(url).status_code == 404
+                assert model.objects.filter(id=other.id).exists()
+
+    def test_owner_cannot_be_changed(self):
+        for endpoint, model, own, other in self.records:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.patch(f'/api/{endpoint}/{own.id}/', {
+                    'user': self.other.id,
+                }, format='json')
+                assert response.status_code == 200
+                own.refresh_from_db()
+                assert own.user_id == self.user.id
+
+    def test_superuser_sees_all_and_can_filter_by_user(self):
+        self.client.force_authenticate(self.admin)
+        for endpoint, model, own, other in self.records:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.get(f'/api/{endpoint}/')
+                assert response.status_code == 200
+                assert len(response.json()) == model.objects.count()
+                response = self.client.get(f'/api/{endpoint}/', {'user': self.other.id})
+                assert response.status_code == 200
+                assert [item['id'] for item in response.json()] == [other.id]
+                response = self.client.get(f'/api/{endpoint}/', {'user': 'invalid'})
+                assert response.status_code == 400
+
+    def test_creator_is_assigned_automatically(self):
+        response = self.client.post('/api/categories/', {
+            'name': 'Own category', 'description': 'Test', 'user': self.other.id,
+        }, format='json')
+        assert response.status_code == 201
+        assert Category.objects.get(id=response.json()['id']).user_id == self.user.id
+
+    def test_foreign_related_records_cannot_be_used(self):
+        category = baker.make(Category, user=self.other)
+        product = baker.make(Product, user=self.other)
+        order = baker.make(Order, user=self.other)
+        requests = [
+            ('products', {'name': 'Test', 'description': 'Test', 'category': category.id}, 'category'),
+            ('product-pictures', {'product': product.id}, 'product'),
+            ('order-items', {'order': order.id, 'product': product.id, 'quantity': 1}, 'order'),
+            ('payments', {'order': order.id, 'amount': '10.00'}, 'order'),
+            ('deliveries', {'order': order.id, 'courier': self.other.id}, 'order'),
+            ('orders', {'client': self.other.id, 'delivery_adress': 'Test', 'comment': 'Test'}, 'client'),
+        ]
+        for endpoint, data, field in requests:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(f'/api/{endpoint}/', data, format='json')
+                assert response.status_code == 400
+                assert field in response.json()
+
+    def test_nested_data_does_not_expose_foreign_records(self):
+        product = baker.make(Product, user=self.user)
+        own_picture = baker.make(ProductPicture, product=product, user=self.user)
+        other_picture = baker.make(ProductPicture, product=product, user=self.other)
+        order = baker.make(Order, user=self.user)
+        own_item = baker.make(OrderItem, order=order, user=self.user)
+        other_item = baker.make(OrderItem, order=order, user=self.other)
+        delivery = baker.make(Delivery, order=order, user=self.other)
+
+        response = self.client.get(f'/api/products/{product.id}/')
+        assert [item['id'] for item in response.json()['pictures']] == [own_picture.id]
+        response = self.client.get(f'/api/orders/{order.id}/')
+        assert response.json()['items'] == [own_item.id]
+        assert response.json().get('delivery') is None
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(f'/api/products/{product.id}/')
+        assert {item['id'] for item in response.json()['pictures']} == {own_picture.id, other_picture.id}
+        response = self.client.get(f'/api/orders/{order.id}/')
+        assert set(response.json()['items']) == {own_item.id, other_item.id}
+        assert response.json()['delivery'] == delivery.id
+
+    def test_user_list_is_limited_and_read_only(self):
+        response = self.client.get('/api/users/')
+        assert response.json() == [{'id': self.user.id, 'username': self.user.username}]
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/users/')
+        assert len(response.json()) == User.objects.count()
+        assert self.client.post('/api/users/', {}, format='json').status_code == 405
+
+    def test_html_product_list_has_the_same_access_rules(self):
+        own = baker.make(Product, user=self.user, name='own-visible-product')
+        other = baker.make(Product, user=self.other, name='other-private-product')
+        self.client.force_login(self.user)
+        response = self.client.get('/')
+        assert own.name in response.content.decode()
+        assert other.name not in response.content.decode()
+        self.client.logout()
+        response = self.client.get('/')
+        assert own.name not in response.content.decode()
+        assert other.name not in response.content.decode()
+
+
 class CategoryViewSetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(baker.make(User, is_superuser=True))
 
     def test_get_list(self):
         category = baker.make(Category)
@@ -53,6 +188,7 @@ class CategoryViewSetTestCase(TestCase):
 class ProductViewsetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(baker.make(User, is_superuser=True))
 
     def test_get_list(self):
         category = baker.make("Category")
@@ -141,6 +277,10 @@ class ProductViewsetTestCase(TestCase):
 class ProfileViewSetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        post_save.disconnect(on_user_create, sender=User)
+        self.user = baker.make(User, is_superuser=True)
+        post_save.connect(on_user_create, sender=User)
+        self.client.force_authenticate(self.user)
 
     def test_get_list(self):
             profile = baker.make(Profile)
@@ -193,6 +333,7 @@ class ProfileViewSetTestCase(TestCase):
 class OrderViewSetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(baker.make(User, is_superuser=True))
 
     def test_get_list(self):
         order = baker.make(Order)
@@ -241,6 +382,7 @@ class OrderViewSetTestCase(TestCase):
 class OrderItemViewSetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(baker.make(User, is_superuser=True))
 
     def test_get_list(self):
         order_item = baker.make(OrderItem)
@@ -287,6 +429,7 @@ class OrderItemViewSetTestCase(TestCase):
 class DeliveryViewSetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(baker.make(User, is_superuser=True))
 
     def test_get_list(self):
         delivery = baker.make(Delivery)
@@ -331,6 +474,7 @@ class DeliveryViewSetTestCase(TestCase):
 class PaymentViewSetTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.client.force_authenticate(baker.make(User, is_superuser=True))
 
     def test_get_list(self):
         payment = baker.make(Payment)

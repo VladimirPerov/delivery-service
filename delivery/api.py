@@ -2,6 +2,10 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+
+from django.db.models import Prefetch
 
 from django.contrib.auth.models import User
 from django.contrib.auth import logout as django_logout
@@ -13,42 +17,95 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from delivery.models import *
 from delivery.serializers import *
 
-class ProfileViewSet(viewsets.ModelViewSet):
+class UserDataViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        if self.request.user.is_superuser:
+            user = self.request.query_params.get('user')
+            if user:
+                try:
+                    user = int(user)
+                    if user < 1 or user > 9223372036854775807:
+                        raise ValueError
+                except ValueError:
+                    raise ValidationError({'user': 'Укажите корректный ID пользователя.'})
+                queryset = queryset.filter(user_id=user)
+        else:
+            queryset = queryset.filter(user=self.request.user)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class UserViewSet(mixins.ListModelMixin, GenericViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return self.queryset.all()
+        return self.queryset.filter(id=self.request.user.id)
+
+
+class ProfileViewSet(UserDataViewSet):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
 
 
-class CategoryViewSet(viewsets.ModelViewSet):
+class CategoryViewSet(UserDataViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
 
-class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.prefetch_related("pictures").all()
+class ProductViewSet(UserDataViewSet):
+    queryset = Product.objects.all()
     serializer_class = ProductSerializer
 
+    def get_queryset(self):
+        pictures = ProductPicture.objects.all()
+        if not self.request.user.is_superuser:
+            pictures = pictures.filter(user=self.request.user)
+        return super().get_queryset().prefetch_related(Prefetch('pictures', queryset=pictures))
 
-class ProductPictureViewSet(viewsets.ModelViewSet):
+
+class ProductPictureViewSet(UserDataViewSet):
     queryset = ProductPicture.objects.all()
     serializer_class = ProductPictureSerializer
 
 
-class OrderViewSet(viewsets.ModelViewSet):
+class OrderViewSet(UserDataViewSet):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
 
+    def get_queryset(self):
+        items = OrderItem.objects.all()
+        deliveries = Delivery.objects.all()
+        if not self.request.user.is_superuser:
+            items = items.filter(user=self.request.user)
+            deliveries = deliveries.filter(user=self.request.user)
+        return super().get_queryset().prefetch_related(
+            Prefetch('items', queryset=items),
+            Prefetch('delivery', queryset=deliveries),
+        )
 
-class OrderItemViewSet(viewsets.ModelViewSet):
+
+class OrderItemViewSet(UserDataViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
 
 
-class DeliveryViewSet(viewsets.ModelViewSet):
+class DeliveryViewSet(UserDataViewSet):
     queryset = Delivery.objects.all()
     serializer_class = DeliverySerializer
 
 
-class PaymentViewSet(viewsets.ModelViewSet):
+class PaymentViewSet(UserDataViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
 
@@ -68,6 +125,7 @@ class AuthProfileViewSet(GenericViewSet):
                 "username": self.request.user.username,
                 "id": self.request.user.id,
                 "role": self.request.user.profile.role,
+                "is_superuser": self.request.user.is_superuser,
             })
 
         return Response(data=data)

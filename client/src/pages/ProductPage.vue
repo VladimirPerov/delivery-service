@@ -1,6 +1,9 @@
 <script setup>
 import axios from 'axios';
-import { nextTick, onBeforeMount, onBeforeUnmount, ref } from 'vue';
+import UserFilter from '@/components/UserFilter.vue';
+import { nextTick, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
+
+const selectedUser = ref("");
 
 const products = ref([]);
 const categories = ref([]);
@@ -78,7 +81,7 @@ async function uploadProductPictures(productId, files) {
 }
 
 async function fetchProducts() {
-  const r = await axios.get("/api/products/");
+  const r = await axios.get("/api/products/", { params: { user: selectedUser.value } });
   products.value = r.data;
 }
 
@@ -165,11 +168,13 @@ onBeforeUnmount(() => {
   clearPreviews(productAddPreviewUrls);
   clearPreviews(productEditPreviewUrls);
 });
+watch(selectedUser, fetchProducts);
 </script>
 
 <template>
   <div class="container my-4">
     <h2>Управление продуктами</h2>
+    <UserFilter v-model="selectedUser" />
 
     <form @submit.prevent.stop="onProductAdd" class="card p-3 mb-4 shadow-sm">
       <h5 class="mb-3">Добавить новый продукт</h5>

@@ -10,7 +10,12 @@ class ShowProductsView(TemplateView):
 
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
-        context["products"] = Product.objects.all()
+        products = Product.objects.all()
+        if not self.request.user.is_authenticated:
+            products = products.none()
+        elif not self.request.user.is_superuser:
+            products = products.filter(user=self.request.user)
+        context["products"] = products
         
         return context
     

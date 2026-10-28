@@ -7,12 +7,14 @@ const useProfileStore = defineStore('profileStore', () => {
 
     const isAuthenticated = ref(false);
     const userName = ref(null);
+    const isSuperuser = ref(false);
     
     async function fetchMe() {
         const r = await axios.get("/api/profile/me/");
         axios.defaults.headers.common['X-CSRFToken'] = Cookies.get("csrftoken");
         isAuthenticated.value = r.data.is_authenticated;
         userName.value = r.data.is_authenticated ? r.data.username : null;
+        isSuperuser.value = r.data.is_authenticated ? r.data.is_superuser : false;
     }
 
     async function login(username, password) {
@@ -35,6 +37,7 @@ const useProfileStore = defineStore('profileStore', () => {
     return {
         isAuthenticated,
         userName,
+        isSuperuser,
 
         fetchMe,
         login,

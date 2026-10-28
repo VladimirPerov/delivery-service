@@ -1,6 +1,9 @@
 <script setup>
 import axios from 'axios';
-import { onBeforeMount, ref } from 'vue';
+import UserFilter from '@/components/UserFilter.vue';
+import { onBeforeMount, ref, watch } from 'vue';
+
+const selectedUser = ref("");
 
 const payments = ref([]);
 const orders = ref([]);
@@ -15,7 +18,7 @@ const paymentToAdd = ref({
 const paymentToEdit = ref({});
 
 async function fetchPayments() {
-    const r = await axios.get("/api/payments/");
+    const r = await axios.get("/api/payments/", { params: { user: selectedUser.value } });
     payments.value = r.data;
 }
 
@@ -80,11 +83,13 @@ onBeforeMount(async () => {
     fetchOrders()
   ]);
 });
+watch(selectedUser, fetchPayments);
 </script>
 
 <template>
   <div class="container my-4">
     <h2>Управление платежами</h2>
+    <UserFilter v-model="selectedUser" />
 
     <form @submit.prevent.stop="onPaymentAdd" class="card p-3 mb-4 shadow-sm">
       <h5 class="mb-3">Добавить новый платеж</h5>

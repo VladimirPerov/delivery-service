@@ -1,6 +1,9 @@
 <script setup>
 import axios from 'axios';
-import { onBeforeMount, ref } from 'vue';
+import UserFilter from '@/components/UserFilter.vue';
+import { onBeforeMount, ref, watch } from 'vue';
+
+const selectedUser = ref("");
 
 const categories = ref([]);
 
@@ -32,7 +35,7 @@ async function categoryAddPictureChange() {
 }
 
 async function fetchCategories() {
-  const r = await axios.get("/api/categories/");
+  const r = await axios.get("/api/categories/", { params: { user: selectedUser.value } });
   categories.value = r.data;
 }
 
@@ -94,11 +97,13 @@ async function onRemoveClick(category) {
 onBeforeMount(async () => {
   await fetchCategories();
 });
+watch(selectedUser, fetchCategories);
 </script>
 
 <template>
   <div class="container my-4">
     <h2>Управление категориями</h2>
+    <UserFilter v-model="selectedUser" />
 
     <form @submit.prevent.stop="onCategoryAdd" class="card p-3 mb-4 shadow-sm">
       <h5 class="mb-3">Добавить новую категорию</h5>

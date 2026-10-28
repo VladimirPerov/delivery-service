@@ -1,6 +1,9 @@
 <script setup>
 import axios from 'axios';
-import { onBeforeMount, ref } from 'vue';
+import UserFilter from '@/components/UserFilter.vue';
+import { onBeforeMount, ref, watch } from 'vue';
+
+const selectedUser = ref("");
 
 const orders = ref([]);
 const users = ref([]);
@@ -16,7 +19,7 @@ const orderToAdd = ref({
 const orderToEdit = ref({});
 
 async function fetchOrders() {
-  const r = await axios.get("/api/orders/");
+  const r = await axios.get("/api/orders/", { params: { user: selectedUser.value } });
   orders.value = r.data;
 }
 
@@ -74,11 +77,13 @@ onBeforeMount(async () => {
     fetchUsers()
   ]);
 });
+watch(selectedUser, fetchOrders);
 </script>
 
 <template>
   <div class="container my-4">
     <h2>Управление заказами</h2>
+    <UserFilter v-model="selectedUser" />
 
     <form @submit.prevent.stop="onOrderAdd" class="card p-3 mb-4 shadow-sm">
       <h5 class="mb-3">Добавить новый заказ</h5>
