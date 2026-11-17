@@ -17,15 +17,26 @@ class UserDataAccessTestCase(TestCase):
         self.admin = baker.make(User, is_superuser=True)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
-        self.records = [('profiles', Profile, self.user.profile, self.other.profile)]
+        own_order = baker.make(Order, user=self.user, client=self.user)
+        other_order = baker.make(Order, user=self.other, client=self.other)
+        old_order = baker.make(Order, user=None)
+        self.records = [
+            ('profiles', Profile, self.user.profile, self.other.profile),
+            ('orders', Order, own_order, other_order),
+        ]
         for endpoint, model in [
             ('categories', Category), ('products', Product),
-            ('product-pictures', ProductPicture), ('orders', Order),
+            ('product-pictures', ProductPicture),
             ('order-items', OrderItem), ('deliveries', Delivery), ('payments', Payment),
         ]:
-            own = baker.make(model, user=self.user)
-            other = baker.make(model, user=self.other)
-            baker.make(model, user=None)
+            if model in (OrderItem, Delivery, Payment):
+                own = baker.make(model, user=self.user, order=own_order)
+                other = baker.make(model, user=self.other, order=other_order)
+                baker.make(model, user=None, order=old_order)
+            else:
+                own = baker.make(model, user=self.user)
+                other = baker.make(model, user=self.other)
+                baker.make(model, user=None)
             self.records.append((endpoint, model, own, other))
 
     def test_anonymous_cannot_read_data(self):
@@ -35,22 +46,38 @@ class UserDataAccessTestCase(TestCase):
                 assert self.client.get(f'/api/{endpoint}/').status_code == 403
         assert self.client.get('/api/users/').status_code == 403
 
-    def test_user_only_sees_own_records_and_cannot_override_filter(self):
+    def test_user_sees_shared_catalog_and_only_their_other_records(self):
         for endpoint, model, own, other in self.records:
             with self.subTest(endpoint=endpoint):
                 for params in ({}, {'user': self.other.id}):
                     response = self.client.get(f'/api/{endpoint}/', params)
                     assert response.status_code == 200
-                    assert [item['id'] for item in response.json()] == [own.id]
+                    ids = {item['id'] for item in response.json()}
+                    if model in (Category, Product, ProductPicture):
+                        assert ids == set(model.objects.values_list('id', flat=True))
+                    else:
+                        assert ids == {own.id}
 
     def test_foreign_detail_update_and_delete_are_denied(self):
         for endpoint, model, own, other in self.records:
+            if model in (Category, Product, ProductPicture):
+                continue
             with self.subTest(endpoint=endpoint):
                 url = f'/api/{endpoint}/{other.id}/'
                 assert self.client.get(url).status_code == 404
                 assert self.client.patch(url, {}, format='json').status_code == 404
                 assert self.client.delete(url).status_code == 404
                 assert model.objects.filter(id=other.id).exists()
+
+    def test_shared_catalog_uses_the_same_access_for_editing(self):
+        product = baker.make(Product, user=self.other, category=baker.make(Category, user=self.other))
+        response = self.client.patch(f'/api/products/{product.id}/', {
+            'name': 'Updated product', 'category': product.category_id,
+        }, format='json')
+        assert response.status_code == 200
+        product.refresh_from_db()
+        assert product.name == 'Updated product'
+        assert product.user_id == self.other.id
 
     def test_owner_cannot_be_changed(self):
         for endpoint, model, own, other in self.records:
@@ -83,12 +110,9 @@ class UserDataAccessTestCase(TestCase):
         assert Category.objects.get(id=response.json()['id']).user_id == self.user.id
 
     def test_foreign_related_records_cannot_be_used(self):
-        category = baker.make(Category, user=self.other)
         product = baker.make(Product, user=self.other)
-        order = baker.make(Order, user=self.other)
+        order = baker.make(Order, user=self.other, client=self.other)
         requests = [
-            ('products', {'name': 'Test', 'description': 'Test', 'category': category.id}, 'category'),
-            ('product-pictures', {'product': product.id}, 'product'),
             ('order-items', {'order': order.id, 'product': product.id, 'quantity': 1}, 'order'),
             ('payments', {'order': order.id, 'amount': '10.00'}, 'order'),
             ('deliveries', {'order': order.id, 'courier': self.other.id}, 'order'),
@@ -100,27 +124,71 @@ class UserDataAccessTestCase(TestCase):
                 assert response.status_code == 400
                 assert field in response.json()
 
-    def test_nested_data_does_not_expose_foreign_records(self):
+    def test_shared_product_includes_all_of_its_pictures(self):
         product = baker.make(Product, user=self.user)
         own_picture = baker.make(ProductPicture, product=product, user=self.user)
         other_picture = baker.make(ProductPicture, product=product, user=self.other)
-        order = baker.make(Order, user=self.user)
-        own_item = baker.make(OrderItem, order=order, user=self.user)
-        other_item = baker.make(OrderItem, order=order, user=self.other)
-        delivery = baker.make(Delivery, order=order, user=self.other)
 
         response = self.client.get(f'/api/products/{product.id}/')
-        assert [item['id'] for item in response.json()['pictures']] == [own_picture.id]
-        response = self.client.get(f'/api/orders/{order.id}/')
-        assert response.json()['items'] == [own_item.id]
-        assert response.json().get('delivery') is None
-
-        self.client.force_authenticate(self.admin)
-        response = self.client.get(f'/api/products/{product.id}/')
+        assert response.status_code == 200
         assert {item['id'] for item in response.json()['pictures']} == {own_picture.id, other_picture.id}
-        response = self.client.get(f'/api/orders/{order.id}/')
-        assert set(response.json()['items']) == {own_item.id, other_item.id}
+
+    def test_order_access_follows_customer_and_assigned_courier(self):
+        courier = baker.make(User)
+        self.user.profile.phone = '+79990001234'
+        self.user.profile.save()
+        order = baker.make(Order, user=self.other, client=self.user)
+        item = baker.make(OrderItem, order=order, user=self.other)
+        payment = baker.make(Payment, order=order, user=courier)
+        order_url = f'/api/orders/{order.id}/'
+        item_url = f'/api/order-items/{item.id}/'
+        payment_url = f'/api/payments/{payment.id}/'
+
+        self.client.force_authenticate(courier)
+        assert self.client.get(order_url).status_code == 404
+        assert self.client.get(item_url).status_code == 404
+
+        delivery = baker.make(Delivery, order=order, user=self.admin, courier=courier)
+        delivery_url = f'/api/deliveries/{delivery.id}/'
+        response = self.client.get(order_url)
+        assert response.status_code == 200
+        assert response.json()['items'] == [item.id]
         assert response.json()['delivery'] == delivery.id
+        assert response.json()['client_phone'] == self.user.profile.phone
+        assert self.client.get(item_url).status_code == 200
+        assert self.client.get(payment_url).status_code == 404
+        assert self.client.get(f'/api/profiles/{self.user.profile.id}/').status_code == 404
+
+        response = self.client.get(delivery_url)
+        assert response.status_code == 200
+        delivery_data = response.json()
+        delivery_data['delivery_status'] = Delivery.DeliveryStatus.in_transit
+        assert self.client.put(delivery_url, delivery_data, format='json').status_code == 200
+        assert self.client.patch(order_url, {'client': courier.id}, format='json').status_code == 400
+        assert self.client.get(payment_url).status_code == 404
+
+        self.client.force_authenticate(self.user)
+        for url in (order_url, item_url, delivery_url, payment_url):
+            assert self.client.get(url).status_code == 200
+
+        self.client.force_authenticate(self.other)
+        for url in (order_url, item_url, delivery_url, payment_url):
+            assert self.client.get(url).status_code == 404
+
+    def test_customer_can_create_order_with_products_from_the_shared_catalog(self):
+        response = self.client.post('/api/orders/', {
+            'delivery_adress': 'Test address', 'comment': 'Test comment',
+        }, format='json')
+        assert response.status_code == 201
+        order_id = response.json()['id']
+        order = Order.objects.get(id=order_id)
+        assert order.client_id == order.user_id == self.user.id
+
+        product = baker.make(Product, user=self.other)
+        response = self.client.post('/api/order-items/', {
+            'order': order_id, 'product': product.id, 'quantity': 1,
+        }, format='json')
+        assert response.status_code == 201
 
     def test_user_list_is_limited_and_read_only(self):
         response = self.client.get('/api/users/')
@@ -132,11 +200,11 @@ class UserDataAccessTestCase(TestCase):
 
     def test_html_product_list_has_the_same_access_rules(self):
         own = baker.make(Product, user=self.user, name='own-visible-product')
-        other = baker.make(Product, user=self.other, name='other-private-product')
+        other = baker.make(Product, user=self.other, name='other-shared-product')
         self.client.force_login(self.user)
         response = self.client.get('/')
         assert own.name in response.content.decode()
-        assert other.name not in response.content.decode()
+        assert other.name in response.content.decode()
         self.client.logout()
         response = self.client.get('/')
         assert own.name not in response.content.decode()

@@ -178,6 +178,9 @@ watch(selectedUser, fetchOrders);
             <div class="text-muted small" v-if="item.delivery_adress">
               Адрес: {{ item.delivery_adress }}
             </div>
+            <div class="text-muted small" v-if="item.client_phone">
+              Телефон: {{ item.client_phone }}
+            </div>
             <div class="text-muted small" v-if="item.comment">
               Комментарий: {{ item.comment }}
             </div>

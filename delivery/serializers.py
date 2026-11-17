@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.db.models import Q
 
 from delivery.models import Category, Delivery, Order, OrderItem, Payment, Product, ProductPicture, Profile
 
@@ -15,12 +16,25 @@ class UserDataSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
         if request and not request.user.is_superuser:
-            for field in self.fields.values():
-                if isinstance(field, serializers.PrimaryKeyRelatedField) and not field.read_only:
-                    if field.queryset.model == User:
-                        field.queryset = field.queryset.filter(id=request.user.id)
-                    else:
-                        field.queryset = field.queryset.filter(user=request.user)
+            for name, field in self.fields.items():
+                if not isinstance(field, serializers.PrimaryKeyRelatedField) or field.read_only:
+                    continue
+
+                model = field.queryset.model
+                if model in (Category, Product):
+                    continue
+                if model == User:
+                    allowed = Q(id=request.user.id)
+                elif model == Order:
+                    allowed = Q(client=request.user)
+                    if self.Meta.model == OrderItem:
+                        allowed |= Q(delivery__courier=request.user)
+                else:
+                    allowed = Q(user=request.user)
+
+                if isinstance(self.instance, self.Meta.model):
+                    allowed |= Q(pk=getattr(self.instance, f'{name}_id'))
+                field.queryset = field.queryset.filter(allowed)
 
 
 class ProfileSerializer(UserDataSerializer):
@@ -62,6 +76,16 @@ class OrderSerializer(UserDataSerializer):
 
     items = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     delivery = serializers.PrimaryKeyRelatedField(read_only=True)
+    client_phone = serializers.CharField(source='client.profile.phone', read_only=True, default='')
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        if request and not request.user.is_superuser:
+            if self.instance is None:
+                attrs['client'] = request.user
+            elif 'client' in attrs and attrs['client'] != self.instance.client:
+                raise serializers.ValidationError({'client': 'Заказчика может изменить только суперпользователь.'})
+        return attrs
 
     class Meta:
         model = Order

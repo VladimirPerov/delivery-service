@@ -13,8 +13,6 @@ class ShowProductsView(TemplateView):
         products = Product.objects.all()
         if not self.request.user.is_authenticated:
             products = products.none()
-        elif not self.request.user.is_superuser:
-            products = products.filter(user=self.request.user)
         context["products"] = products
         
         return context

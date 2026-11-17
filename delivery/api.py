@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 
-from django.db.models import Prefetch
+from django.db.models import Q
 
 from django.contrib.auth.models import User
 from django.contrib.auth import logout as django_logout
@@ -34,9 +34,12 @@ class UserDataViewSet(viewsets.ModelViewSet):
                     raise ValidationError({'user': 'Укажите корректный ID пользователя.'})
                 queryset = queryset.filter(user_id=user)
         else:
-            queryset = queryset.filter(user=self.request.user)
+            queryset = self.filter_for_user(queryset, self.request.user)
 
         return queryset
+
+    def filter_for_user(self, queryset, user):
+        return queryset.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -58,56 +61,56 @@ class ProfileViewSet(UserDataViewSet):
     serializer_class = ProfileSerializer
 
 
-class CategoryViewSet(UserDataViewSet):
+class CatalogViewSet(UserDataViewSet):
+    def filter_for_user(self, queryset, user):
+        return queryset
+
+
+class CategoryViewSet(CatalogViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
 
-class ProductViewSet(UserDataViewSet):
-    queryset = Product.objects.all()
+class ProductViewSet(CatalogViewSet):
+    queryset = Product.objects.prefetch_related('pictures')
     serializer_class = ProductSerializer
 
-    def get_queryset(self):
-        pictures = ProductPicture.objects.all()
-        if not self.request.user.is_superuser:
-            pictures = pictures.filter(user=self.request.user)
-        return super().get_queryset().prefetch_related(Prefetch('pictures', queryset=pictures))
 
-
-class ProductPictureViewSet(UserDataViewSet):
+class ProductPictureViewSet(CatalogViewSet):
     queryset = ProductPicture.objects.all()
     serializer_class = ProductPictureSerializer
 
 
 class OrderViewSet(UserDataViewSet):
-    queryset = Order.objects.all()
+    queryset = Order.objects.select_related('client__profile', 'delivery').prefetch_related('items')
     serializer_class = OrderSerializer
 
-    def get_queryset(self):
-        items = OrderItem.objects.all()
-        deliveries = Delivery.objects.all()
-        if not self.request.user.is_superuser:
-            items = items.filter(user=self.request.user)
-            deliveries = deliveries.filter(user=self.request.user)
-        return super().get_queryset().prefetch_related(
-            Prefetch('items', queryset=items),
-            Prefetch('delivery', queryset=deliveries),
-        )
+    def filter_for_user(self, queryset, user):
+        return queryset.filter(Q(client=user) | Q(delivery__courier=user))
 
 
 class OrderItemViewSet(UserDataViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
 
+    def filter_for_user(self, queryset, user):
+        return queryset.filter(Q(order__client=user) | Q(order__delivery__courier=user))
+
 
 class DeliveryViewSet(UserDataViewSet):
     queryset = Delivery.objects.all()
     serializer_class = DeliverySerializer
 
+    def filter_for_user(self, queryset, user):
+        return queryset.filter(Q(order__client=user) | Q(courier=user))
+
 
 class PaymentViewSet(UserDataViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
+
+    def filter_for_user(self, queryset, user):
+        return queryset.filter(order__client=user)
 
 
 class AuthProfileViewSet(GenericViewSet):
