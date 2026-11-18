@@ -11,33 +11,44 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username']
 
 
-class UserDataSerializer(serializers.ModelSerializer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        request = self.context.get('request')
-        if request and not request.user.is_superuser:
-            for name, field in self.fields.items():
-                if not isinstance(field, serializers.PrimaryKeyRelatedField) or field.read_only:
-                    continue
-
-                model = field.queryset.model
-                if model in (Category, Product):
-                    continue
-                if model == User:
-                    allowed = Q(id=request.user.id)
-                elif model == Order:
-                    allowed = Q(client=request.user)
-                    if self.Meta.model == OrderItem:
-                        allowed |= Q(delivery__courier=request.user)
-                else:
-                    allowed = Q(user=request.user)
-
-                if isinstance(self.instance, self.Meta.model):
-                    allowed |= Q(pk=getattr(self.instance, f'{name}_id'))
-                field.queryset = field.queryset.filter(allowed)
+def with_request_author(validated_data, context):
+    request = context.get('request')
+    if request is None:
+        return validated_data
+    return {**validated_data, 'user': request.user}
 
 
-class ProfileSerializer(UserDataSerializer):
+def restrict_related_fields(serializer, fields):
+    request = serializer.context.get('request')
+    if not request or request.user.is_superuser:
+        return fields
+
+    for name, field in fields.items():
+        if not isinstance(field, serializers.PrimaryKeyRelatedField) or field.read_only:
+            continue
+
+        model = field.queryset.model
+        if model in (Category, Product):
+            continue
+        if model == User:
+            allowed = Q(id=request.user.id)
+        elif model == Order:
+            allowed = Q(client=request.user)
+            if serializer.Meta.model == OrderItem:
+                allowed |= Q(delivery__courier=request.user)
+        else:
+            allowed = Q(user=request.user)
+
+        if isinstance(serializer.instance, serializer.Meta.model):
+            allowed |= Q(pk=getattr(serializer.instance, f'{name}_id'))
+        field.queryset = field.queryset.filter(allowed)
+    return fields
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
+
     def validate(self, attrs):
         if self.instance is None and Profile.objects.filter(user=self.context['request'].user).exists():
             raise serializers.ValidationError('Профиль этого пользователя уже существует.')
@@ -49,22 +60,31 @@ class ProfileSerializer(UserDataSerializer):
         read_only_fields = ['user']
 
 
-class CategorySerializer(UserDataSerializer):
+class CategorySerializer(serializers.ModelSerializer):
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
+
     class Meta:
         model = Category
         fields = "__all__"
         read_only_fields = ['user']
 
 
-class ProductPictureSerializer(UserDataSerializer):
+class ProductPictureSerializer(serializers.ModelSerializer):
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
+
     class Meta:
         model = ProductPicture
         fields = "__all__"
         read_only_fields = ['user']
 
 
-class ProductSerializer(UserDataSerializer):
+class ProductSerializer(serializers.ModelSerializer):
     pictures = ProductPictureSerializer(many=True, read_only=True)
+
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
 
     class Meta:
         model = Product
@@ -72,11 +92,17 @@ class ProductSerializer(UserDataSerializer):
         read_only_fields = ['user']
 
 
-class OrderSerializer(UserDataSerializer):
+class OrderSerializer(serializers.ModelSerializer):
 
     items = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     delivery = serializers.PrimaryKeyRelatedField(read_only=True)
     client_phone = serializers.CharField(source='client.profile.phone', read_only=True, default='')
+
+    def get_fields(self):
+        return restrict_related_fields(self, super().get_fields())
+
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
 
     def validate(self, attrs):
         request = self.context.get('request')
@@ -93,21 +119,39 @@ class OrderSerializer(UserDataSerializer):
         read_only_fields = ['user']
 
 
-class OrderItemSerializer(UserDataSerializer):
+class OrderItemSerializer(serializers.ModelSerializer):
+    def get_fields(self):
+        return restrict_related_fields(self, super().get_fields())
+
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
+
     class Meta:
         model = OrderItem
         fields = "__all__"
         read_only_fields = ['user']
 
 
-class DeliverySerializer(UserDataSerializer):
+class DeliverySerializer(serializers.ModelSerializer):
+    def get_fields(self):
+        return restrict_related_fields(self, super().get_fields())
+
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
+
     class Meta:
         model = Delivery
         fields = "__all__"
         read_only_fields = ['user']
 
 
-class PaymentSerializer(UserDataSerializer):
+class PaymentSerializer(serializers.ModelSerializer):
+    def get_fields(self):
+        return restrict_related_fields(self, super().get_fields())
+
+    def create(self, validated_data):
+        return super().create(with_request_author(validated_data, self.context))
+
     class Meta:
         model = Payment
         fields = "__all__"

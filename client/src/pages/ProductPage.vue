@@ -4,6 +4,8 @@ import UserFilter from '@/components/UserFilter.vue';
 import { nextTick, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
 
 const selectedUser = ref("");
+const stats = ref(null);
+const pictureStats = ref(null);
 
 const products = ref([]);
 const categories = ref([]);
@@ -81,8 +83,16 @@ async function uploadProductPictures(productId, files) {
 }
 
 async function fetchProducts() {
-  const r = await axios.get("/api/products/", { params: { user: selectedUser.value } });
-  products.value = r.data;
+  const params = { user: selectedUser.value };
+  const [list, summary, pictures] = await Promise.all([
+    axios.get("/api/products/", { params }),
+    axios.get("/api/products/stats/", { params }),
+    axios.get("/api/product-pictures/stats/", { params }),
+  ]);
+  if (params.user !== selectedUser.value) return;
+  products.value = list.data;
+  stats.value = summary.data;
+  pictureStats.value = pictures.data;
 }
 
 async function fetchCategories() {
@@ -251,6 +261,13 @@ watch(selectedUser, fetchProducts);
     </form>
 
     <div class="card shadow-sm">
+      <div v-if="stats && pictureStats" class="card-header">
+        <div>
+          Всего товаров: {{ stats.total }} · Нет в наличии: {{ stats.out_of_stock }} ·
+          Средняя цена: {{ stats.average_price === null ? '—' : Number(stats.average_price).toFixed(2) + ' ₽' }}
+        </div>
+        <div>Всего фотографий: {{ pictureStats.total }} · Товаров с фото: {{ pictureStats.products_with_pictures }}</div>
+      </div>
       <div class="card-body">
         <div v-for="item in products" :key="item.id" class="d-flex justify-content-between align-items-center gap-3 border-bottom py-3">
             

@@ -4,6 +4,7 @@ import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
 const selectedUser = ref("");
+const stats = ref(null);
 
 const orderItems = ref([]);
 const products = ref([]);
@@ -19,8 +20,14 @@ const orderItemToAdd = ref({
 const orderItemToEdit = ref({});
 
 async function fetchOrderItems() {
-  const r = await axios.get("/api/order-items/", { params: { user: selectedUser.value } });
-  orderItems.value = r.data;
+  const params = { user: selectedUser.value };
+  const [list, summary] = await Promise.all([
+    axios.get("/api/order-items/", { params }),
+    axios.get("/api/order-items/stats/", { params }),
+  ]);
+  if (params.user !== selectedUser.value) return;
+  orderItems.value = list.data;
+  stats.value = summary.data;
 }
 
 async function fetchProducts() {
@@ -141,6 +148,9 @@ watch(selectedUser, fetchOrderItems);
     </form>
 
     <div class="card shadow-sm">
+      <div v-if="stats" class="card-header">
+        Всего позиций: {{ stats.total }} · Всего единиц: {{ stats.total_quantity }}
+      </div>
       <div class="card-body">
         <div v-if="orderItems.length === 0" class="text-center text-muted py-3">
           Позиции заказа не найдены.

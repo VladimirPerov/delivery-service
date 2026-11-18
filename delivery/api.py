@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 
-from django.db.models import Q
+from django.db.models import Avg, Count, Q, Sum
 
 from django.contrib.auth.models import User
 from django.contrib.auth import logout as django_logout
@@ -17,32 +17,18 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from delivery.models import *
 from delivery.serializers import *
 
-class UserDataViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-
-        if self.request.user.is_superuser:
-            user = self.request.query_params.get('user')
-            if user:
-                try:
-                    user = int(user)
-                    if user < 1 or user > 9223372036854775807:
-                        raise ValueError
-                except ValueError:
-                    raise ValidationError({'user': 'Укажите корректный ID пользователя.'})
-                queryset = queryset.filter(user_id=user)
-        else:
-            queryset = self.filter_for_user(queryset, self.request.user)
-
+def filter_by_selected_user(queryset, request):
+    user = request.query_params.get('user')
+    if not user:
         return queryset
 
-    def filter_for_user(self, queryset, user):
-        return queryset.filter(user=user)
-
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    try:
+        user = int(user)
+        if user < 1 or user > 9223372036854775807:
+            raise ValueError
+    except ValueError:
+        raise ValidationError({'user': 'Укажите корректный ID пользователя.'})
+    return queryset.filter(user_id=user)
 
 
 class UserViewSet(mixins.ListModelMixin, GenericViewSet):
@@ -56,61 +42,160 @@ class UserViewSet(mixins.ListModelMixin, GenericViewSet):
         return self.queryset.filter(id=self.request.user.id)
 
 
-class ProfileViewSet(UserDataViewSet):
+class ProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_superuser:
+            return queryset.filter(user=user)
+
+        return filter_by_selected_user(queryset, self.request)
+
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            clients=Count('id', filter=Q(role=Profile.Role.client)),
+            couriers=Count('id', filter=Q(role=Profile.Role.courier)),
+        ))
 
 
-class CatalogViewSet(UserDataViewSet):
-    def filter_for_user(self, queryset, user):
-        return queryset
+class CatalogViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not self.request.user.is_superuser:
+            return queryset
+
+        return filter_by_selected_user(queryset, self.request)
 
 
 class CategoryViewSet(CatalogViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            with_picture=Count('id', filter=Q(picture__isnull=False) & ~Q(picture='')),
+        ))
+
 
 class ProductViewSet(CatalogViewSet):
     queryset = Product.objects.prefetch_related('pictures')
     serializer_class = ProductSerializer
+
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            average_price=Avg('price'),
+            out_of_stock=Count('id', filter=Q(stock_quantity__lte=0)),
+        ))
 
 
 class ProductPictureViewSet(CatalogViewSet):
     queryset = ProductPicture.objects.all()
     serializer_class = ProductPictureSerializer
 
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            products_with_pictures=Count('product', distinct=True),
+        ))
 
-class OrderViewSet(UserDataViewSet):
+
+class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.select_related('client__profile', 'delivery').prefetch_related('items')
     serializer_class = OrderSerializer
+    permission_classes = [IsAuthenticated]
 
-    def filter_for_user(self, queryset, user):
-        return queryset.filter(Q(client=user) | Q(delivery__courier=user))
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_superuser:
+            return queryset.filter(Q(client=user) | Q(delivery__courier=user))
+
+        return filter_by_selected_user(queryset, self.request)
+
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            completed=Count('id', filter=Q(status=Order.OrderStatus.COMPLETED)),
+            average_total=Avg('total_price'),
+        ))
 
 
-class OrderItemViewSet(UserDataViewSet):
+class OrderItemViewSet(viewsets.ModelViewSet):
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
+    permission_classes = [IsAuthenticated]
 
-    def filter_for_user(self, queryset, user):
-        return queryset.filter(Q(order__client=user) | Q(order__delivery__courier=user))
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_superuser:
+            return queryset.filter(Q(order__client=user) | Q(order__delivery__courier=user))
+
+        return filter_by_selected_user(queryset, self.request)
+
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            total_quantity=Sum('quantity', default=0),
+        ))
 
 
-class DeliveryViewSet(UserDataViewSet):
+class DeliveryViewSet(viewsets.ModelViewSet):
     queryset = Delivery.objects.all()
     serializer_class = DeliverySerializer
+    permission_classes = [IsAuthenticated]
 
-    def filter_for_user(self, queryset, user):
-        return queryset.filter(Q(order__client=user) | Q(courier=user))
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_superuser:
+            return queryset.filter(Q(order__client=user) | Q(courier=user))
+
+        return filter_by_selected_user(queryset, self.request)
+
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            in_transit=Count('id', filter=Q(delivery_status=Delivery.DeliveryStatus.in_transit)),
+            delivered=Count('id', filter=Q(delivery_status=Delivery.DeliveryStatus.delivered)),
+        ))
 
 
-class PaymentViewSet(UserDataViewSet):
+class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated]
 
-    def filter_for_user(self, queryset, user):
-        return queryset.filter(order__client=user)
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_superuser:
+            return queryset.filter(order__client=user)
+
+        return filter_by_selected_user(queryset, self.request)
+
+    @action(detail=False, methods=['GET'])
+    def stats(self, request):
+        return Response(self.get_queryset().aggregate(
+            total=Count('id'),
+            paid_amount=Sum('amount', filter=Q(status=Payment.PaymentStatus.paid), default=0),
+        ))
 
 
 class AuthProfileViewSet(GenericViewSet):

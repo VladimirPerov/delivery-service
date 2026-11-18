@@ -4,6 +4,7 @@ import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
 const selectedUser = ref("");
+const stats = ref(null);
 
 const deliveries = ref([]);
 const orders = ref([]);
@@ -28,8 +29,14 @@ function formatDateForInput(datetimeStr) {
 }
 
 async function fetchDeliveries() {
-  const r = await axios.get("/api/deliveries/", { params: { user: selectedUser.value } });
-  deliveries.value = r.data;
+  const params = { user: selectedUser.value };
+  const [list, summary] = await Promise.all([
+    axios.get("/api/deliveries/", { params }),
+    axios.get("/api/deliveries/stats/", { params }),
+  ]);
+  if (params.user !== selectedUser.value) return;
+  deliveries.value = list.data;
+  stats.value = summary.data;
 }
 
 async function fetchOrders() {
@@ -183,6 +190,9 @@ watch(selectedUser, fetchDeliveries);
     </form>
 
     <div class="card shadow-sm">
+      <div v-if="stats" class="card-header">
+        Всего доставок: {{ stats.total }} · В пути: {{ stats.in_transit }} · Доставлено: {{ stats.delivered }}
+      </div>
       <div class="card-body">
         <div v-if="deliveries.length === 0" class="text-center text-muted py-3">
           Доставки не найдены.

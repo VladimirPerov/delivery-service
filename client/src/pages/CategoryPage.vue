@@ -4,6 +4,7 @@ import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
 const selectedUser = ref("");
+const stats = ref(null);
 
 const categories = ref([]);
 
@@ -35,8 +36,14 @@ async function categoryAddPictureChange() {
 }
 
 async function fetchCategories() {
-  const r = await axios.get("/api/categories/", { params: { user: selectedUser.value } });
-  categories.value = r.data;
+  const params = { user: selectedUser.value };
+  const [list, summary] = await Promise.all([
+    axios.get("/api/categories/", { params }),
+    axios.get("/api/categories/stats/", { params }),
+  ]);
+  if (params.user !== selectedUser.value) return;
+  categories.value = list.data;
+  stats.value = summary.data;
 }
 
 async function onCategoryAdd() {
@@ -151,6 +158,9 @@ watch(selectedUser, fetchCategories);
       </form>
 
     <div class="card shadow-sm">
+      <div v-if="stats" class="card-header">
+        Всего категорий: {{ stats.total }} · С изображением: {{ stats.with_picture }}
+      </div>
       <div class="card-body">
         <div v-if="categories.length === 0" class="text-center text-muted py-3">
           Категории не найдены.

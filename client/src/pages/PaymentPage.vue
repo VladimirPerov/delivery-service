@@ -4,6 +4,7 @@ import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
 const selectedUser = ref("");
+const stats = ref(null);
 
 const payments = ref([]);
 const orders = ref([]);
@@ -18,8 +19,14 @@ const paymentToAdd = ref({
 const paymentToEdit = ref({});
 
 async function fetchPayments() {
-    const r = await axios.get("/api/payments/", { params: { user: selectedUser.value } });
-    payments.value = r.data;
+    const params = { user: selectedUser.value };
+    const [list, summary] = await Promise.all([
+        axios.get("/api/payments/", { params }),
+        axios.get("/api/payments/stats/", { params }),
+    ]);
+    if (params.user !== selectedUser.value) return;
+    payments.value = list.data;
+    stats.value = summary.data;
 }
 
 async function fetchOrders() {
@@ -151,6 +158,9 @@ watch(selectedUser, fetchPayments);
     </form>
 
     <div class="card shadow-sm">
+      <div v-if="stats" class="card-header">
+        Всего платежей: {{ stats.total }} · Сумма оплаченных: {{ Number(stats.paid_amount).toFixed(2) }} ₽
+      </div>
       <div class="card-body">
         <div v-if="payments.length === 0" class="text-center text-muted py-3">
           Платежи не найдены.

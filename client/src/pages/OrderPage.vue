@@ -4,6 +4,7 @@ import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
 const selectedUser = ref("");
+const stats = ref(null);
 
 const orders = ref([]);
 const users = ref([]);
@@ -19,8 +20,14 @@ const orderToAdd = ref({
 const orderToEdit = ref({});
 
 async function fetchOrders() {
-  const r = await axios.get("/api/orders/", { params: { user: selectedUser.value } });
-  orders.value = r.data;
+  const params = { user: selectedUser.value };
+  const [list, summary] = await Promise.all([
+    axios.get("/api/orders/", { params }),
+    axios.get("/api/orders/stats/", { params }),
+  ]);
+  if (params.user !== selectedUser.value) return;
+  orders.value = list.data;
+  stats.value = summary.data;
 }
 
 async function fetchUsers() {
@@ -160,6 +167,10 @@ watch(selectedUser, fetchOrders);
     </form>
 
     <div class="card shadow-sm">
+      <div v-if="stats" class="card-header">
+        Всего заказов: {{ stats.total }} · Завершено: {{ stats.completed }} ·
+        Средняя сумма заказа: {{ stats.average_total === null ? '—' : Number(stats.average_total).toFixed(2) + ' ₽' }}
+      </div>
       <div class="card-body">
         <div v-if="orders.length === 0" class="text-center text-muted py-3">
           Заказы не найдены.
