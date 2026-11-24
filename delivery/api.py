@@ -12,8 +12,6 @@ from django.contrib.auth.models import User
 from django.contrib.auth import logout as django_logout
 from django.contrib.auth import login as django_login
 from django.contrib.auth import authenticate
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import ensure_csrf_cookie
 
 from delivery.models import *
 from delivery.serializers import *
@@ -68,11 +66,13 @@ class ProfileViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            clients=Count('id', filter=Q(role=Profile.Role.client)),
-            couriers=Count('id', filter=Q(role=Profile.Role.courier)),
-        ))
+        profiles = self.get_queryset()
+        stats = {
+            'total': profiles.count(),
+            'clients': profiles.filter(role=Profile.Role.client).count(),
+            'couriers': profiles.filter(role=Profile.Role.courier).count(),
+        }
+        return Response(stats)
 
 
 class CatalogViewSet(viewsets.ModelViewSet):
@@ -93,10 +93,13 @@ class CategoryViewSet(CatalogViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            with_picture=Count('id', filter=Q(picture__isnull=False) & ~Q(picture='')),
-        ))
+        categories = self.get_queryset()
+        with_picture = categories.filter(picture__isnull=False).exclude(picture='')
+        stats = {
+            'total': categories.count(),
+            'with_picture': with_picture.count(),
+        }
+        return Response(stats)
 
 
 class ProductViewSet(CatalogViewSet):
@@ -106,11 +109,10 @@ class ProductViewSet(CatalogViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            average_price=Avg('price'),
-            out_of_stock=Count('id', filter=Q(stock_quantity__lte=0)),
-        ))
+        products = self.get_queryset()
+        stats = products.aggregate(total=Count('id'), average_price=Avg('price'))
+        stats['out_of_stock'] = products.filter(stock_quantity__lte=0).count()
+        return Response(stats)
 
 
 class ProductPictureViewSet(CatalogViewSet):
@@ -119,10 +121,12 @@ class ProductPictureViewSet(CatalogViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
+        pictures = self.get_queryset()
+        stats = pictures.aggregate(
             total=Count('id'),
             products_with_pictures=Count('product', distinct=True),
-        ))
+        )
+        return Response(stats)
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -141,11 +145,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            completed=Count('id', filter=Q(status=Order.OrderStatus.COMPLETED)),
-            average_total=Avg('total_price'),
-        ))
+        orders = self.get_queryset()
+        stats = orders.aggregate(total=Count('id'), average_total=Avg('total_price'))
+        stats['completed'] = orders.filter(status=Order.OrderStatus.COMPLETED).count()
+        return Response(stats)
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
@@ -164,10 +167,9 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            total_quantity=Sum('quantity', default=0),
-        ))
+        items = self.get_queryset()
+        stats = items.aggregate(total=Count('id'), total_quantity=Sum('quantity', default=0))
+        return Response(stats)
 
 
 class DeliveryViewSet(viewsets.ModelViewSet):
@@ -186,11 +188,13 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            in_transit=Count('id', filter=Q(delivery_status=Delivery.DeliveryStatus.in_transit)),
-            delivered=Count('id', filter=Q(delivery_status=Delivery.DeliveryStatus.delivered)),
-        ))
+        deliveries = self.get_queryset()
+        stats = {
+            'total': deliveries.count(),
+            'in_transit': deliveries.filter(delivery_status=Delivery.DeliveryStatus.in_transit).count(),
+            'delivered': deliveries.filter(delivery_status=Delivery.DeliveryStatus.delivered).count(),
+        }
+        return Response(stats)
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -209,31 +213,30 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        return Response(self.get_queryset().aggregate(
-            total=Count('id'),
-            paid_amount=Sum('amount', filter=Q(status=Payment.PaymentStatus.paid), default=0),
-        ))
+        payments = self.get_queryset()
+        paid = payments.filter(status=Payment.PaymentStatus.paid)
+        stats = paid.aggregate(paid_amount=Sum('amount', default=0))
+        stats['total'] = payments.count()
+        return Response(stats)
 
 
 class AuthProfileViewSet(GenericViewSet):
     queryset = User.objects.all()
 
     @action(detail=False, url_path="me", methods=['GET'])
-    @method_decorator(ensure_csrf_cookie)
     def get_me(self, request, *args, **kwargs):
-        data = {
-            'is_authenticated': self.request.user.is_authenticated
-        }
+        user = request.user
+        data = {'is_authenticated': user.is_authenticated}
 
-        if self.request.user.is_authenticated:
+        if user.is_authenticated:
             data.update({
-                "username": self.request.user.username,
-                "id": self.request.user.id,
-                "role": self.request.user.profile.role,
-                "is_superuser": self.request.user.is_superuser,
+                "username": user.username,
+                "id": user.id,
+                "role": user.profile.role,
+                "is_superuser": user.is_superuser,
             })
 
-        return Response(data=data)
+        return Response(data)
 
     @action(detail=False, url_path="logout", methods=['POST'])
     def logout(self, *args, **kwargs):
@@ -242,22 +245,16 @@ class AuthProfileViewSet(GenericViewSet):
         return Response()
 
     @action(detail=False, url_path="login", methods=['POST'])
-    def login(self, *args, **kwargs):
-        username = self.request.data['username']
-        password = self.request.data['password']
-
-        success = False
-        status_code = 403
-        
+    def login(self, request, *args, **kwargs):
+        username = request.data['username']
+        password = request.data['password']
         user = authenticate(username=username, password=password)
-        if user:
-            success = True
-            status_code = 200
-            django_login(self.request, user)
 
-        return Response({
-            'success': success
-        }, status=status_code)
+        if user is None:
+            return Response({'success': False}, status=403)
+
+        django_login(request, user)
+        return Response({'success': True})
 
     @action(detail=False, url_path="register", methods=['POST'])
     def register(self, *args, **kwargs):
