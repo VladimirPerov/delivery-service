@@ -1,8 +1,11 @@
 <script setup>
 import axios from 'axios';
+import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const page = ref(1);
+const total = ref(0);
 const selectedUser = ref("");
 const stats = ref(null);
 
@@ -19,14 +22,16 @@ const orderToAdd = ref({
 
 const orderToEdit = ref({});
 
-async function fetchOrders() {
-  const params = { user: selectedUser.value };
+async function fetchOrders(newPage = page.value) {
+  page.value = newPage;
+  const params = { user: selectedUser.value, page: newPage };
   const [list, summary] = await Promise.all([
     axios.get("/api/orders/", { params }),
     axios.get("/api/orders/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value) return;
-  orders.value = list.data;
+  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  orders.value = list.data.results;
+  total.value = list.data.count;
   stats.value = summary.data;
 }
 
@@ -58,6 +63,7 @@ async function onUpdateOrder() {
 
 async function onRemoveClick(order) {
   await axios.delete(`/api/orders/${order.id}/`);
+  if (orders.value.length === 1 && page.value > 1) page.value--;
   await fetchOrders();
 }
 
@@ -84,7 +90,7 @@ onBeforeMount(async () => {
     fetchUsers()
   ]);
 });
-watch(selectedUser, fetchOrders);
+watch(selectedUser, () => fetchOrders(1));
 </script>
 
 <template>
@@ -211,6 +217,8 @@ watch(selectedUser, fetchOrders);
         </div>
       </div>
     </div>
+
+    <Pagination :page="page" :total="total" @change="fetchOrders" />
 
     <div class="modal fade" id="editOrderModal" tabindex="-1">
       <div class="modal-dialog">

@@ -1,6 +1,7 @@
 from rest_framework.viewsets import GenericViewSet
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
@@ -16,6 +17,15 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from delivery.models import *
 from delivery.serializers import *
+
+class ListPagination(PageNumberPagination):
+    page_size = 10
+
+    def paginate_queryset(self, queryset, request, view=None):
+        if 'page' not in request.query_params:
+            return None
+        return super().paginate_queryset(queryset.order_by('id'), request, view)
+
 
 def filter_by_selected_user(queryset, request):
     user = request.query_params.get('user')
@@ -43,6 +53,7 @@ class UserViewSet(mixins.ListModelMixin, GenericViewSet):
 
 
 class ProfileViewSet(viewsets.ModelViewSet):
+    pagination_class = ListPagination
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -76,6 +87,7 @@ class CatalogViewSet(viewsets.ModelViewSet):
 
 
 class CategoryViewSet(CatalogViewSet):
+    pagination_class = ListPagination
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
@@ -88,6 +100,7 @@ class CategoryViewSet(CatalogViewSet):
 
 
 class ProductViewSet(CatalogViewSet):
+    pagination_class = ListPagination
     queryset = Product.objects.prefetch_related('pictures')
     serializer_class = ProductSerializer
 
@@ -113,6 +126,7 @@ class ProductPictureViewSet(CatalogViewSet):
 
 
 class OrderViewSet(viewsets.ModelViewSet):
+    pagination_class = ListPagination
     queryset = Order.objects.select_related('client__profile', 'delivery').prefetch_related('items')
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
@@ -135,6 +149,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
+    pagination_class = ListPagination
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
     permission_classes = [IsAuthenticated]
@@ -156,6 +171,7 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 
 
 class DeliveryViewSet(viewsets.ModelViewSet):
+    pagination_class = ListPagination
     queryset = Delivery.objects.all()
     serializer_class = DeliverySerializer
     permission_classes = [IsAuthenticated]
@@ -178,6 +194,7 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
+    pagination_class = ListPagination
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]

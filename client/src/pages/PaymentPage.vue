@@ -1,8 +1,11 @@
 <script setup>
 import axios from 'axios';
+import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const page = ref(1);
+const total = ref(0);
 const selectedUser = ref("");
 const stats = ref(null);
 
@@ -18,14 +21,16 @@ const paymentToAdd = ref({
 
 const paymentToEdit = ref({});
 
-async function fetchPayments() {
-    const params = { user: selectedUser.value };
+async function fetchPayments(newPage = page.value) {
+    page.value = newPage;
+    const params = { user: selectedUser.value, page: newPage };
     const [list, summary] = await Promise.all([
         axios.get("/api/payments/", { params }),
         axios.get("/api/payments/stats/", { params }),
     ]);
-    if (params.user !== selectedUser.value) return;
-    payments.value = list.data;
+    if (params.user !== selectedUser.value || newPage !== page.value) return;
+    payments.value = list.data.results;
+    total.value = list.data.count;
     stats.value = summary.data;
 }
 
@@ -56,6 +61,7 @@ async function onUpdatePayment() {
 
 async function onRemoveClick(payment) {
   await axios.delete(`/api/payments/${payment.id}/`);
+  if (payments.value.length === 1 && page.value > 1) page.value--;
   await fetchPayments();
 }
 
@@ -90,7 +96,7 @@ onBeforeMount(async () => {
     fetchOrders()
   ]);
 });
-watch(selectedUser, fetchPayments);
+watch(selectedUser, () => fetchPayments(1));
 </script>
 
 <template>
@@ -194,6 +200,8 @@ watch(selectedUser, fetchPayments);
         </div>
       </div>
     </div>
+
+    <Pagination :page="page" :total="total" @change="fetchPayments" />
 
     <div class="modal fade" id="editPaymentModal" tabindex="-1">
       <div class="modal-dialog">

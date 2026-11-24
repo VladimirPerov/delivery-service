@@ -1,8 +1,11 @@
 <script setup>
 import axios from 'axios';
+import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { nextTick, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
 
+const page = ref(1);
+const total = ref(0);
 const selectedUser = ref("");
 const stats = ref(null);
 const pictureStats = ref(null);
@@ -82,15 +85,17 @@ async function uploadProductPictures(productId, files) {
   }
 }
 
-async function fetchProducts() {
-  const params = { user: selectedUser.value };
+async function fetchProducts(newPage = page.value) {
+  page.value = newPage;
+  const params = { user: selectedUser.value, page: newPage };
   const [list, summary, pictures] = await Promise.all([
     axios.get("/api/products/", { params }),
     axios.get("/api/products/stats/", { params }),
     axios.get("/api/product-pictures/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value) return;
-  products.value = list.data;
+  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  products.value = list.data.results;
+  total.value = list.data.count;
   stats.value = summary.data;
   pictureStats.value = pictures.data;
 }
@@ -166,6 +171,7 @@ async function onUpdateProduct() {
 
 async function onRemoveClick(product) {
     await axios.delete(`/api/products/${product.id}/`);
+    if (products.value.length === 1 && page.value > 1) page.value--;
     await fetchProducts();
 }
 
@@ -178,7 +184,7 @@ onBeforeUnmount(() => {
   clearPreviews(productAddPreviewUrls);
   clearPreviews(productEditPreviewUrls);
 });
-watch(selectedUser, fetchProducts);
+watch(selectedUser, () => fetchProducts(1));
 </script>
 
 <template>
@@ -298,6 +304,8 @@ watch(selectedUser, fetchProducts);
         </div>
       </div>
     </div>
+
+    <Pagination :page="page" :total="total" @change="fetchProducts" />
 
     <div class="modal fade" id="editProductModal" tabindex="-1">
       <div class="modal-dialog">

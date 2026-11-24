@@ -1,8 +1,11 @@
 <script setup>
 import axios from 'axios';
+import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const page = ref(1);
+const total = ref(0);
 const selectedUser = ref("");
 const stats = ref(null);
 
@@ -19,14 +22,16 @@ const orderItemToAdd = ref({
 
 const orderItemToEdit = ref({});
 
-async function fetchOrderItems() {
-  const params = { user: selectedUser.value };
+async function fetchOrderItems(newPage = page.value) {
+  page.value = newPage;
+  const params = { user: selectedUser.value, page: newPage };
   const [list, summary] = await Promise.all([
     axios.get("/api/order-items/", { params }),
     axios.get("/api/order-items/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value) return;
-  orderItems.value = list.data;
+  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  orderItems.value = list.data.results;
+  total.value = list.data.count;
   stats.value = summary.data;
 }
 
@@ -62,6 +67,7 @@ async function onUpdateOrderItem() {
 
 async function onRemoveClick(item) {
   await axios.delete(`/api/order-items/${item.id}/`);
+  if (orderItems.value.length === 1 && page.value > 1) page.value--;
   await fetchOrderItems();
 }
 
@@ -77,7 +83,7 @@ onBeforeMount(async () => {
     fetchOrders()
   ]);
 });
-watch(selectedUser, fetchOrderItems);
+watch(selectedUser, () => fetchOrderItems(1));
 </script>
 
 <template>
@@ -183,6 +189,8 @@ watch(selectedUser, fetchOrderItems);
         </div>
       </div>
     </div>
+
+    <Pagination :page="page" :total="total" @change="fetchOrderItems" />
 
     <div class="modal fade" id="editOrderItemModal" tabindex="-1">
       <div class="modal-dialog">

@@ -1,8 +1,11 @@
 <script setup>
 import axios from 'axios';
+import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const page = ref(1);
+const total = ref(0);
 const selectedUser = ref("");
 const stats = ref(null);
 
@@ -28,14 +31,16 @@ function formatDateForInput(datetimeStr) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-async function fetchDeliveries() {
-  const params = { user: selectedUser.value };
+async function fetchDeliveries(newPage = page.value) {
+  page.value = newPage;
+  const params = { user: selectedUser.value, page: newPage };
   const [list, summary] = await Promise.all([
     axios.get("/api/deliveries/", { params }),
     axios.get("/api/deliveries/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value) return;
-  deliveries.value = list.data;
+  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  deliveries.value = list.data.results;
+  total.value = list.data.count;
   stats.value = summary.data;
 }
 
@@ -86,6 +91,7 @@ async function onUpdateDelivery() {
 
 async function onRemoveClick(delivery) {
   await axios.delete(`/api/deliveries/${delivery.id}/`);
+  if (deliveries.value.length === 1 && page.value > 1) page.value--;
   await fetchDeliveries();
 }
 
@@ -112,7 +118,7 @@ onBeforeMount(async () => {
     fetchCouriers()
   ]);
 });
-watch(selectedUser, fetchDeliveries);
+watch(selectedUser, () => fetchDeliveries(1));
 </script>
 
 <template>
@@ -225,6 +231,8 @@ watch(selectedUser, fetchDeliveries);
         </div>
       </div>
     </div>
+
+    <Pagination :page="page" :total="total" @change="fetchDeliveries" />
 
     <div class="modal fade" id="editDeliveryModal" tabindex="-1">
       <div class="modal-dialog">
