@@ -1,10 +1,18 @@
 <script setup>
 import axios from 'axios';
 import { onBeforeMount, ref, watch } from 'vue';
+import ColumnFilters from '@/components/ColumnFilters.vue';
 import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 
 const profiles = ref([]);
+const filterFields = [
+  { name: 'user__id', label: 'ID пользователя', type: 'number' },
+  { name: 'name__icontains', label: 'Имя' },
+  { name: 'phone__icontains', label: 'Телефон' },
+  { name: 'bonus_points', label: 'Бонусные баллы', type: 'number' },
+];
+const filters = ref({});
 const page = ref(1);
 const total = ref(0);
 const selectedUser = ref("");
@@ -12,25 +20,27 @@ const stats = ref(null);
 
 async function fetchProfiles(newPage = page.value) {
     page.value = newPage;
-    const params = { user: selectedUser.value, page: newPage };
+    const activeFilters = filters.value;
+    const params = { ...activeFilters, user: selectedUser.value, page: newPage };
     const [list, summary] = await Promise.all([
         axios.get('/api/profiles/', { params }),
         axios.get('/api/profiles/stats/', { params }),
     ]);
-    if (params.user !== selectedUser.value || newPage !== page.value) return;
+    if (params.user !== selectedUser.value || newPage !== page.value || activeFilters !== filters.value) return;
     profiles.value = list.data.results;
     total.value = list.data.count;
     stats.value = summary.data;
 }
 
 onBeforeMount(fetchProfiles);
-watch(selectedUser, () => fetchProfiles(1));
+watch([selectedUser, filters], () => fetchProfiles(1));
 </script>
 
 <template>
     <div class="container my-4">
         <h2>Профили</h2>
         <UserFilter v-model="selectedUser" />
+        <ColumnFilters :fields="filterFields" @apply="filters = $event" />
         <p v-if="stats" class="text-muted">
             Всего профилей: {{ stats.total }} · Клиентов: {{ stats.clients }} · Курьеров: {{ stats.couriers }}
         </p>

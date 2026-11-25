@@ -1,9 +1,23 @@
 <script setup>
 import axios from 'axios';
+import ColumnFilters from '@/components/ColumnFilters.vue';
 import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const statuses = {
+  assigned: "Назначена",
+  in_transit: "В пути",
+  delivered: "Доставлена",
+  failed: "Ошибка доставки"
+};
+const filterFields = [
+  { name: 'id', label: 'Номер доставки', type: 'number' },
+  { name: 'order__id', label: 'Номер заказа', type: 'number' },
+  { name: 'delivery_status', label: 'Статус', options: statuses },
+  { name: 'courier__username__icontains', label: 'Логин курьера' },
+];
+const filters = ref({});
 const page = ref(1);
 const total = ref(0);
 const selectedUser = ref("");
@@ -33,12 +47,13 @@ function formatDateForInput(datetimeStr) {
 
 async function fetchDeliveries(newPage = page.value) {
   page.value = newPage;
-  const params = { user: selectedUser.value, page: newPage };
+  const activeFilters = filters.value;
+  const params = { ...activeFilters, user: selectedUser.value, page: newPage };
   const [list, summary] = await Promise.all([
     axios.get("/api/deliveries/", { params }),
     axios.get("/api/deliveries/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  if (params.user !== selectedUser.value || newPage !== page.value || activeFilters !== filters.value) return;
   deliveries.value = list.data.results;
   total.value = list.data.count;
   stats.value = summary.data;
@@ -86,23 +101,13 @@ async function onUpdateDelivery() {
     arrival_time: deliveryToEdit.value.arrival_time ? new Date(deliveryToEdit.value.arrival_time).toISOString() : null
   };
   await axios.put(`/api/deliveries/${deliveryToEdit.value.id}/`, payload);
-  await fetchDeliveries();
+  await fetchDeliveries(Object.keys(filters.value).length ? 1 : page.value);
 }
 
 async function onRemoveClick(delivery) {
   await axios.delete(`/api/deliveries/${delivery.id}/`);
   if (deliveries.value.length === 1 && page.value > 1) page.value--;
   await fetchDeliveries();
-}
-
-function getStatusLabel(status) {
-  const map = {
-    assigned: "Назначена",
-    in_transit: "В пути",
-    delivered: "Доставлена",
-    failed: "Ошибка доставки"
-  };
-  return map[status] || status;
 }
 
 function getCourierName(courierId) {
@@ -118,7 +123,7 @@ onBeforeMount(async () => {
     fetchCouriers()
   ]);
 });
-watch(selectedUser, () => fetchDeliveries(1));
+watch([selectedUser, filters], () => fetchDeliveries(1));
 </script>
 
 <template>
@@ -195,6 +200,7 @@ watch(selectedUser, () => fetchDeliveries(1));
       </div>
     </form>
 
+    <ColumnFilters :fields="filterFields" @apply="filters = $event" />
     <div class="card shadow-sm">
       <div v-if="stats" class="card-header">
         Всего доставок: {{ stats.total }} · В пути: {{ stats.in_transit }} · Доставлено: {{ stats.delivered }}
@@ -211,7 +217,7 @@ watch(selectedUser, () => fetchDeliveries(1));
           <div>
             <strong>Доставка #{{ item.id }}</strong> 
             <span v-if="item.order"> (Заказ #{{ item.order }})</span> — 
-            <span class="badge bg-info text-dark">{{ getStatusLabel(item.delivery_status) }}</span>
+            <span class="badge bg-info text-dark">{{ statuses[item.delivery_status] || item.delivery_status }}</span>
             <div class="text-muted small">
               Курьер: {{ getCourierName(item.courier) }}
             </div>

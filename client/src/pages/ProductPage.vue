@@ -1,14 +1,20 @@
 <script setup>
 import axios from 'axios';
+import ColumnFilters from '@/components/ColumnFilters.vue';
 import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { nextTick, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue';
 
+const filterFields = [
+  { name: 'name__icontains', label: 'Название' },
+  { name: 'price', label: 'Цена, ₽', type: 'number', step: '0.01' },
+  { name: 'stock_quantity', label: 'Остаток', type: 'number', step: '0.01' },
+];
+const filters = ref({});
 const page = ref(1);
 const total = ref(0);
 const selectedUser = ref("");
 const stats = ref(null);
-const pictureStats = ref(null);
 
 const products = ref([]);
 const categories = ref([]);
@@ -87,17 +93,16 @@ async function uploadProductPictures(productId, files) {
 
 async function fetchProducts(newPage = page.value) {
   page.value = newPage;
-  const params = { user: selectedUser.value, page: newPage };
-  const [list, summary, pictures] = await Promise.all([
+  const activeFilters = filters.value;
+  const params = { ...activeFilters, user: selectedUser.value, page: newPage };
+  const [list, summary] = await Promise.all([
     axios.get("/api/products/", { params }),
     axios.get("/api/products/stats/", { params }),
-    axios.get("/api/product-pictures/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  if (params.user !== selectedUser.value || newPage !== page.value || activeFilters !== filters.value) return;
   products.value = list.data.results;
   total.value = list.data.count;
   stats.value = summary.data;
-  pictureStats.value = pictures.data;
 }
 
 async function fetchCategories() {
@@ -166,7 +171,7 @@ async function onUpdateProduct() {
     productEditPicturesRef.value.value = '';
     clearPreviews(productEditPreviewUrls);
 
-    await fetchProducts();
+    await fetchProducts(Object.keys(filters.value).length ? 1 : page.value);
 }
 
 async function onRemoveClick(product) {
@@ -184,7 +189,7 @@ onBeforeUnmount(() => {
   clearPreviews(productAddPreviewUrls);
   clearPreviews(productEditPreviewUrls);
 });
-watch(selectedUser, () => fetchProducts(1));
+watch([selectedUser, filters], () => fetchProducts(1));
 </script>
 
 <template>
@@ -266,13 +271,14 @@ watch(selectedUser, () => fetchProducts(1));
       </div>
     </form>
 
+    <ColumnFilters :fields="filterFields" @apply="filters = $event" />
     <div class="card shadow-sm">
-      <div v-if="stats && pictureStats" class="card-header">
+      <div v-if="stats" class="card-header">
         <div>
           Всего товаров: {{ stats.total }} · Нет в наличии: {{ stats.out_of_stock }} ·
           Средняя цена: {{ stats.average_price === null ? '—' : Number(stats.average_price).toFixed(2) + ' ₽' }}
         </div>
-        <div>Всего фотографий: {{ pictureStats.total }} · Товаров с фото: {{ pictureStats.products_with_pictures }}</div>
+        <div>Всего фотографий: {{ stats.picture_count }} · Товаров с фото: {{ stats.products_with_pictures }}</div>
       </div>
       <div class="card-body">
         <div v-for="item in products" :key="item.id" class="d-flex justify-content-between align-items-center gap-3 border-bottom py-3">

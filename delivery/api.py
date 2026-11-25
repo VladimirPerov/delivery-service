@@ -51,6 +51,9 @@ class UserViewSet(mixins.ListModelMixin, GenericViewSet):
 
 
 class ProfileViewSet(viewsets.ModelViewSet):
+    filterset_fields = {
+        'user__id': ['exact'], 'name': ['icontains'], 'phone': ['icontains'], 'bonus_points': ['exact'],
+    }
     pagination_class = ListPagination
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer
@@ -66,7 +69,7 @@ class ProfileViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        profiles = self.get_queryset()
+        profiles = self.filter_queryset(self.get_queryset())
         stats = {
             'total': profiles.count(),
             'clients': profiles.filter(role=Profile.Role.client).count(),
@@ -87,13 +90,14 @@ class CatalogViewSet(viewsets.ModelViewSet):
 
 
 class CategoryViewSet(CatalogViewSet):
+    filterset_fields = {'name': ['icontains'], 'description': ['icontains']}
     pagination_class = ListPagination
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        categories = self.get_queryset()
+        categories = self.filter_queryset(self.get_queryset())
         with_picture = categories.filter(picture__isnull=False).exclude(picture='')
         stats = {
             'total': categories.count(),
@@ -103,15 +107,21 @@ class CategoryViewSet(CatalogViewSet):
 
 
 class ProductViewSet(CatalogViewSet):
+    filterset_fields = {'name': ['icontains'], 'price': ['exact'], 'stock_quantity': ['exact']}
     pagination_class = ListPagination
     queryset = Product.objects.prefetch_related('pictures')
     serializer_class = ProductSerializer
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        products = self.get_queryset()
+        products = self.filter_queryset(self.get_queryset())
         stats = products.aggregate(total=Count('id'), average_price=Avg('price'))
         stats['out_of_stock'] = products.filter(stock_quantity__lte=0).count()
+        pictures = ProductPicture.objects.filter(product__in=products)
+        stats.update(pictures.aggregate(
+            picture_count=Count('id'),
+            products_with_pictures=Count('product', distinct=True),
+        ))
         return Response(stats)
 
 
@@ -130,6 +140,11 @@ class ProductPictureViewSet(CatalogViewSet):
 
 
 class OrderViewSet(viewsets.ModelViewSet):
+    filterset_fields = {
+        'id': ['exact'], 'status': ['exact'], 'total_price': ['exact'],
+        'client__username': ['icontains'], 'client__profile__phone': ['icontains'],
+        'delivery_adress': ['icontains'], 'comment': ['icontains'],
+    }
     pagination_class = ListPagination
     queryset = Order.objects.select_related('client__profile', 'delivery').prefetch_related('items')
     serializer_class = OrderSerializer
@@ -145,13 +160,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        orders = self.get_queryset()
+        orders = self.filter_queryset(self.get_queryset())
         stats = orders.aggregate(total=Count('id'), average_total=Avg('total_price'))
         stats['completed'] = orders.filter(status=Order.OrderStatus.COMPLETED).count()
         return Response(stats)
 
 
 class OrderItemViewSet(viewsets.ModelViewSet):
+    filterset_fields = {
+        'product__name': ['icontains'], 'quantity': ['exact'], 'price_at_time': ['exact'], 'order__id': ['exact'],
+    }
     pagination_class = ListPagination
     queryset = OrderItem.objects.all()
     serializer_class = OrderItemSerializer
@@ -167,12 +185,15 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        items = self.get_queryset()
+        items = self.filter_queryset(self.get_queryset())
         stats = items.aggregate(total=Count('id'), total_quantity=Sum('quantity', default=0))
         return Response(stats)
 
 
 class DeliveryViewSet(viewsets.ModelViewSet):
+    filterset_fields = {
+        'id': ['exact'], 'order__id': ['exact'], 'delivery_status': ['exact'], 'courier__username': ['icontains'],
+    }
     pagination_class = ListPagination
     queryset = Delivery.objects.all()
     serializer_class = DeliverySerializer
@@ -188,7 +209,7 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        deliveries = self.get_queryset()
+        deliveries = self.filter_queryset(self.get_queryset())
         stats = {
             'total': deliveries.count(),
             'in_transit': deliveries.filter(delivery_status=Delivery.DeliveryStatus.in_transit).count(),
@@ -198,6 +219,10 @@ class DeliveryViewSet(viewsets.ModelViewSet):
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
+    filterset_fields = {
+        'id': ['exact'], 'order__id': ['exact'], 'amount': ['exact'], 'payment_method': ['exact'],
+        'status': ['exact'], 'payment_date': ['gte', 'lt'],
+    }
     pagination_class = ListPagination
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
@@ -213,7 +238,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['GET'])
     def stats(self, request):
-        payments = self.get_queryset()
+        payments = self.filter_queryset(self.get_queryset())
         paid = payments.filter(status=Payment.PaymentStatus.paid)
         stats = paid.aggregate(paid_amount=Sum('amount', default=0))
         stats['total'] = payments.count()

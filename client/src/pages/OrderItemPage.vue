@@ -1,9 +1,17 @@
 <script setup>
 import axios from 'axios';
+import ColumnFilters from '@/components/ColumnFilters.vue';
 import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const filterFields = [
+  { name: 'product__name__icontains', label: 'Название товара' },
+  { name: 'quantity', label: 'Количество', type: 'number' },
+  { name: 'price_at_time', label: 'Цена, ₽', type: 'number', step: '0.01' },
+  { name: 'order__id', label: 'Номер заказа', type: 'number' },
+];
+const filters = ref({});
 const page = ref(1);
 const total = ref(0);
 const selectedUser = ref("");
@@ -24,12 +32,13 @@ const orderItemToEdit = ref({});
 
 async function fetchOrderItems(newPage = page.value) {
   page.value = newPage;
-  const params = { user: selectedUser.value, page: newPage };
+  const activeFilters = filters.value;
+  const params = { ...activeFilters, user: selectedUser.value, page: newPage };
   const [list, summary] = await Promise.all([
     axios.get("/api/order-items/", { params }),
     axios.get("/api/order-items/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  if (params.user !== selectedUser.value || newPage !== page.value || activeFilters !== filters.value) return;
   orderItems.value = list.data.results;
   total.value = list.data.count;
   stats.value = summary.data;
@@ -62,7 +71,7 @@ function onOrderItemEditClick(item) {
 
 async function onUpdateOrderItem() {
   await axios.put(`/api/order-items/${orderItemToEdit.value.id}/`, orderItemToEdit.value);
-  await fetchOrderItems();
+  await fetchOrderItems(Object.keys(filters.value).length ? 1 : page.value);
 }
 
 async function onRemoveClick(item) {
@@ -83,7 +92,7 @@ onBeforeMount(async () => {
     fetchOrders()
   ]);
 });
-watch(selectedUser, () => fetchOrderItems(1));
+watch([selectedUser, filters], () => fetchOrderItems(1));
 </script>
 
 <template>
@@ -153,6 +162,7 @@ watch(selectedUser, () => fetchOrderItems(1));
       </div>
     </form>
 
+    <ColumnFilters :fields="filterFields" @apply="filters = $event" />
     <div class="card shadow-sm">
       <div v-if="stats" class="card-header">
         Всего позиций: {{ stats.total }} · Всего единиц: {{ stats.total_quantity }}

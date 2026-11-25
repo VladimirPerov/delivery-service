@@ -1,9 +1,30 @@
 <script setup>
 import axios from 'axios';
+import ColumnFilters from '@/components/ColumnFilters.vue';
 import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const statuses = {
+  pending: "Ожидает оплаты",
+  paid: "Оплачен",
+  failed: "Ошибка оплаты",
+  refunded: "Возвращен"
+};
+const methods = {
+  cash: "Наличные",
+  card: "Банковская карта",
+  sbp: "Система быстрых платежей"
+};
+const filterFields = [
+  { name: 'id', label: 'Номер платежа', type: 'number' },
+  { name: 'order__id', label: 'Номер заказа', type: 'number' },
+  { name: 'amount', label: 'Сумма, ₽', type: 'number', step: '0.01' },
+  { name: 'payment_method', label: 'Способ оплаты', options: methods },
+  { name: 'status', label: 'Статус', options: statuses },
+  { name: 'payment_date', label: 'Дата оплаты', type: 'date' },
+];
+const filters = ref({});
 const page = ref(1);
 const total = ref(0);
 const selectedUser = ref("");
@@ -21,14 +42,27 @@ const paymentToAdd = ref({
 
 const paymentToEdit = ref({});
 
+function applyFilters(values) {
+  if (values.payment_date) {
+    const start = new Date(values.payment_date + 'T00:00:00');
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    values.payment_date__gte = start.toISOString();
+    values.payment_date__lt = end.toISOString();
+    delete values.payment_date;
+  }
+  filters.value = values;
+}
+
 async function fetchPayments(newPage = page.value) {
     page.value = newPage;
-    const params = { user: selectedUser.value, page: newPage };
+    const activeFilters = filters.value;
+    const params = { ...activeFilters, user: selectedUser.value, page: newPage };
     const [list, summary] = await Promise.all([
         axios.get("/api/payments/", { params }),
         axios.get("/api/payments/stats/", { params }),
     ]);
-    if (params.user !== selectedUser.value || newPage !== page.value) return;
+    if (params.user !== selectedUser.value || newPage !== page.value || activeFilters !== filters.value) return;
     payments.value = list.data.results;
     total.value = list.data.count;
     stats.value = summary.data;
@@ -56,32 +90,13 @@ function onPaymentEditClick(payment) {
 
 async function onUpdatePayment() {
   await axios.put(`/api/payments/${paymentToEdit.value.id}/`, paymentToEdit.value);
-  await fetchPayments();
+  await fetchPayments(Object.keys(filters.value).length ? 1 : page.value);
 }
 
 async function onRemoveClick(payment) {
   await axios.delete(`/api/payments/${payment.id}/`);
   if (payments.value.length === 1 && page.value > 1) page.value--;
   await fetchPayments();
-}
-
-function getMethodLabel(method) {
-  const map = {
-    cash: "Наличные",
-    card: "Банковская карта",
-    sbp: "Система быстрых платежей"
-  };
-  return map[method] || method;
-}
-
-function getStatusLabel(status) {
-  const map = {
-    pending: "Ожидает оплаты",
-    paid: "Оплачен",
-    failed: "Ошибка оплаты",
-    refunded: "Возвращен"
-  };
-  return map[status] || status;
 }
 
 function formatDate(dateStr) {
@@ -96,7 +111,7 @@ onBeforeMount(async () => {
     fetchOrders()
   ]);
 });
-watch(selectedUser, () => fetchPayments(1));
+watch([selectedUser, filters], () => fetchPayments(1));
 </script>
 
 <template>
@@ -163,6 +178,7 @@ watch(selectedUser, () => fetchPayments(1));
       </div>
     </form>
 
+    <ColumnFilters :fields="filterFields" @apply="applyFilters" />
     <div class="card shadow-sm">
       <div v-if="stats" class="card-header">
         Всего платежей: {{ stats.total }} · Сумма оплаченных: {{ Number(stats.paid_amount).toFixed(2) }} ₽
@@ -179,8 +195,8 @@ watch(selectedUser, () => fetchPayments(1));
           <div>
             <strong>Платеж #{{ item.id }}</strong> (Заказ #{{ item.order }}) — 
             <strong>{{ item.amount }} руб.</strong>
-            <span class="badge bg-secondary ms-2">{{ getMethodLabel(item.payment_method) }}</span>
-            <span class="badge bg-info text-dark ms-2">{{ getStatusLabel(item.status) }}</span>
+            <span class="badge bg-secondary ms-2">{{ methods[item.payment_method] || item.payment_method }}</span>
+            <span class="badge bg-info text-dark ms-2">{{ statuses[item.status] || item.status }}</span>
             <div class="text-muted small" v-if="item.payment_date">
               Дата оплаты: {{ formatDate(item.payment_date) }}
             </div>

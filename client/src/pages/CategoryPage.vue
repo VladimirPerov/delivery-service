@@ -1,9 +1,15 @@
 <script setup>
 import axios from 'axios';
+import ColumnFilters from '@/components/ColumnFilters.vue';
 import Pagination from '@/components/Pagination.vue';
 import UserFilter from '@/components/UserFilter.vue';
 import { onBeforeMount, ref, watch } from 'vue';
 
+const filterFields = [
+  { name: 'name__icontains', label: 'Название' },
+  { name: 'description__icontains', label: 'Описание' },
+];
+const filters = ref({});
 const page = ref(1);
 const total = ref(0);
 const selectedUser = ref("");
@@ -40,12 +46,13 @@ async function categoryAddPictureChange() {
 
 async function fetchCategories(newPage = page.value) {
   page.value = newPage;
-  const params = { user: selectedUser.value, page: newPage };
+  const activeFilters = filters.value;
+  const params = { ...activeFilters, user: selectedUser.value, page: newPage };
   const [list, summary] = await Promise.all([
     axios.get("/api/categories/", { params }),
     axios.get("/api/categories/stats/", { params }),
   ]);
-  if (params.user !== selectedUser.value || newPage !== page.value) return;
+  if (params.user !== selectedUser.value || newPage !== page.value || activeFilters !== filters.value) return;
   categories.value = list.data.results;
   total.value = list.data.count;
   stats.value = summary.data;
@@ -98,7 +105,7 @@ async function onUpdateCategory() {
   if (categoryEditPictureRef.value) categoryEditPictureRef.value.value = '';
   categoryEditImageUrl.value = null;
 
-  await fetchCategories();
+  await fetchCategories(Object.keys(filters.value).length ? 1 : page.value);
 }
 
 async function onRemoveClick(category) {
@@ -110,7 +117,7 @@ async function onRemoveClick(category) {
 onBeforeMount(async () => {
   await fetchCategories();
 });
-watch(selectedUser, () => fetchCategories(1));
+watch([selectedUser, filters], () => fetchCategories(1));
 </script>
 
 <template>
@@ -163,6 +170,7 @@ watch(selectedUser, () => fetchCategories(1));
         </div>
       </form>
 
+    <ColumnFilters :fields="filterFields" @apply="filters = $event" />
     <div class="card shadow-sm">
       <div v-if="stats" class="card-header">
         Всего категорий: {{ stats.total }} · С изображением: {{ stats.with_picture }}
